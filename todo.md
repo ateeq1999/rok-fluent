@@ -26,16 +26,19 @@ See `plan.md` for architecture decisions and the full feature-flag taxonomy.
 - [ ] Copy `rok-orm-core/src/replica.rs`      → `src/core/replica.rs`
 - [ ] Copy `rok-orm-core/src/schema_cache.rs` → `src/core/schema_cache.rs`
 - [ ] Copy `rok-orm-core/src/tenant.rs`       → `src/core/tenant.rs`
-- [ ] Copy `rok-orm-core/src/sqlx_pg.rs`      → `src/core/sqlx_pg.rs`
-- [ ] Copy `rok-orm-core/src/sqlx_sqlite.rs`  → `src/core/sqlx_sqlite.rs`
-- [ ] Copy `rok-orm-core/src/sqlx_mysql.rs`   → `src/core/sqlx_mysql.rs`
+- [ ] Create `src/core/sqlx/` directory
+- [ ] Copy `rok-orm-core/src/sqlx_pg.rs`      → `src/core/sqlx/pg.rs`
+- [ ] Copy `rok-orm-core/src/sqlx_sqlite.rs`  → `src/core/sqlx/sqlite.rs`
+- [ ] Copy `rok-orm-core/src/sqlx_mysql.rs`   → `src/core/sqlx/mysql.rs`
+- [ ] Write `src/core/sqlx/mod.rs` — re-export each backend under its feature gate:
+  - `#[cfg(feature = "postgres")]`: `pub mod pg`
+  - `#[cfg(feature = "sqlite")]`: `pub mod sqlite`
+  - `#[cfg(feature = "mysql")]`: `pub mod mysql`
 - [ ] Write `src/core/mod.rs` with correct `#[cfg(feature)]` gates:
   - Always: `condition`, `model`, `query`, `schema_cache`
   - `#[cfg(feature = "replica")]`: `replica`
   - `#[cfg(feature = "tenant")]`: `tenant`
-  - `#[cfg(feature = "postgres")]`: `sqlx_pg`
-  - `#[cfg(feature = "sqlite")]`: `sqlx_sqlite`
-  - `#[cfg(feature = "mysql")]`: `sqlx_mysql`
+  - Any sqlx feature active: `pub mod sqlx` (use `#[cfg(any(feature="postgres", ...))]`)
 - [ ] Replace all `crate::` paths in core files (were `rok_orm_core::`) with new `crate::core::` paths
 
 ---
@@ -104,15 +107,19 @@ See `plan.md` for architecture decisions and the full feature-flag taxonomy.
 
 ---
 
-## Phase 7 — Rename `rok-orm-macros` → `rok-fluent-macros`
+## Phase 7 — Rename `rok-orm-macros` → `rok-fluent-macros` and migrate `query!`
 
 - [ ] Rename crate directory `rok-orm-macros/` → `rok-fluent-macros/`
 - [ ] Update `rok-fluent-macros/Cargo.toml`:
   - `name = "rok-fluent-macros"`
   - `version = "0.4.0"`
   - Remove any path dependency on `rok-orm-core`; replace with paths into `src/core/` via `rok-fluent`
+- [ ] Remove `query!` proc-macro from `rok-fluent-macros/src/lib.rs` (move it out)
+- [ ] Write `src/macros.rs` in `rok-fluent` — implement `query!` as `macro_rules!` (pure token
+  substitution, no struct introspection needed; always available, no feature gate)
 - [ ] Update macro code: replace any `rok_orm_core::` references with `rok_fluent::core::` (or inline the needed types)
 - [ ] Add `rok-fluent-macros` as optional dep in root `Cargo.toml` under `macros` feature
+- [ ] Expose `query!` from `src/lib.rs` via `#[macro_export]` (always on) and remove it from the `macros` feature re-export
 
 ---
 

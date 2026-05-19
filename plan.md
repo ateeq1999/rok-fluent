@@ -9,13 +9,29 @@ Collapse five separate crates (`rok-orm`, `rok-orm-core`, `rok-orm-macros`, `rok
 
 ## Constraint: Proc-Macro Crate
 
-Rust requires `proc-macro = true` crates to be standalone. `rok-orm-macros` **cannot** be inlined
-into `src/`. Strategy (identical to `tokio-macros` / `serde_derive`):
+Rust requires `proc-macro = true` crates to be standalone. A crate flagged as a proc-macro is
+compiled as a **compiler plugin** (a `.dll`/`.so` loaded by rustc itself during the HOST build
+phase). It runs _before_ your regular library is compiled and therefore cannot share the same
+compilation unit with it. The compiler enforces this hard:
+
+> *"A crate of type proc-macro must not export anything other than proc-macros."*
+
+This is why every derive-heavy crate in the ecosystem splits: `serde`+`serde_derive`,
+`tokio`+`tokio-macros`, `thiserror`+`thiserror-impl`. `macro_rules!` macros _can_ live inline and
+be feature-gated, but they cannot introspect struct fields or read field-level attributes — so
+`#[derive(Model)]`, `#[derive(Resource)]`, and `#[derive(Seed)]` require proc-macros regardless.
+
+**Hybrid approach:** move `query!` (pure token substitution, no struct inspection) to a
+`macro_rules!` inside `rok-fluent`. Keep only the three derive macros in `rok-fluent-macros`.
+This shrinks the proc-macro crate and saves ~1–2 s on cold builds by reducing `syn` parse work.
+
+Strategy (identical to `tokio-macros` / `serde_derive`):
 
 - Rename `rok-orm-macros` → **`rok-fluent-macros`** (internal implementation detail, lives at
-  `rok-fluent-macros/`).
-- Users never depend on it directly.
-- `rok-fluent` re-exports its items when the `macros` feature is on.
+  `rok-fluent-macros/`). Contains only `Model`, `Resource`, `Seed` derives.
+- `query!` moves to `src/macros.rs` as a `macro_rules!` macro, always available, no feature gate.
+- Users never depend on `rok-fluent-macros` directly.
+- `rok-fluent` re-exports its derive items when the `macros` feature is on.
 
 All other crates dissolve completely into `src/`.
 
@@ -41,9 +57,11 @@ rok-fluent/                      ← repo root
 │   │   ├── replica.rs           ← cfg(feature = "replica")
 │   │   ├── schema_cache.rs
 │   │   ├── tenant.rs            ← cfg(feature = "tenant")
-│   │   ├── sqlx_pg.rs           ← cfg(feature = "postgres")
-│   │   ├── sqlx_sqlite.rs       ← cfg(feature = "sqlite")
-│   │   └── sqlx_mysql.rs        ← cfg(feature = "mysql")
+│   │   └── sqlx/                ← all SQLx adapter code grouped here
+│   │       ├── mod.rs           ← re-exports pg/sqlite/mysql under their features
+│   │       ├── pg.rs            ← cfg(feature = "postgres")  (was sqlx_pg.rs)
+│   │       ├── sqlite.rs        ← cfg(feature = "sqlite")    (was sqlx_sqlite.rs)
+│   │       └── mysql.rs         ← cfg(feature = "mysql")     (was sqlx_mysql.rs)
 │   │
 │   ├── orm/                     ← rok-orm absorbed here
 │   │   ├── mod.rs
