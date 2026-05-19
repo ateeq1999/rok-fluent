@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"d:\\\\DEV\\\\open-source\\\\rok-fluent\" -Recurse -Force)",
+      "Bash(Select-Object FullName)",
+      "Bash(ConvertTo-Csv -NoTypeInformation)",
+      "Bash(Out-Host)",
+      "Bash(cargo metadata *)",
+      "Bash(grep -E \"\\\\.\\(toml|md|txt|yaml\\)$\")"
+    ]
+  }
+}

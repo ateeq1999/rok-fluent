@@ -1,0 +1,49 @@
+[package]
+name = "rok-orm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Eloquent-inspired async ORM for the rok ecosystem"
+keywords = ["orm", "database", "async", "rok"]
+categories = ["database"]
+
+[features]
+default = ["macros"]
+## Re-export derive macros (`Model`, `Resource`, `query!`, `Seed`). On by default.
+macros = ["dep:rok-orm-macros"]
+## Enable the async PostgreSQL executor (requires a running Postgres instance to use).
+postgres = ["dep:sqlx", "dep:tokio", "rok-orm-core/sqlx-postgres", "dep:futures-core", "dep:dashmap", "dep:futures"]
+## Enable the async SQLite executor.
+sqlite = ["dep:sqlx", "dep:tokio", "rok-orm-core/sqlx-sqlite"]
+## Enable the async MySQL executor.
+mysql = ["dep:sqlx", "dep:tokio", "rok-orm-core/sqlx-mysql", "sqlx/mysql"]
+## Enable the Tower/Axum OrmLayer middleware (implies postgres).
+axum = ["dep:axum", "dep:tower", "postgres"]
+## Enable OpenTelemetry query tracing spans.
+tracing = ["dep:tracing"]
+## Emit connection pool Prometheus/metrics-facade gauge metrics.
+metrics = ["dep:metrics"]
+
+[dependencies]
+rok-orm-core   = { path = "../rok-orm-core", version = "0.3" }
+rok-orm-macros = { path = "../rok-orm-macros", version = "0.3", optional = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+base64     = { workspace = true }
+chrono     = { workspace = true }
+uuid       = { workspace = true }
+once_cell = "1"
+sqlx  = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+axum  = { workspace = true, optional = true }
+tower = { workspace = true, optional = true }
+futures-core = { version = "0.3", optional = true }
+futures      = { version = "0.3", optional = true }
+dashmap      = { workspace = true, optional = true }
+tracing      = { version = "0.1", optional = true }
+metrics      = { version = "0.24", optional = true }
+
+[dev-dependencies]
