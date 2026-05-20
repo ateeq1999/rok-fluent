@@ -39,7 +39,7 @@ pub struct User {
     pub name:  String,
     pub email: String,
 }
-// Generates: pub mod users { table, id, name, email }
+// Generates: User::table(), User::ID, User::NAME, User::EMAIL
 ```
 
 ### Query
@@ -47,22 +47,29 @@ pub struct User {
 ```rust,no_run
 // SELECT * FROM "users" WHERE "users"."id" = $1
 let user: Option<User> = db::select()
-    .from(users::table)
-    .where_(users::id.eq(42_i64))
+    .from(User::table())
+    .where_(User::ID.eq(42_i64))
     .fetch_optional::<User>(&pool).await?;
 
 // Compose expressions
 let users: Vec<User> = db::select()
-    .from(users::table)
-    .where_(users::email.like("%@example.com").and(users::id.gt(0_i64)))
-    .order_by(users::name.asc())
+    .from(User::table())
+    .where_(User::EMAIL.like("%@example.com").and(User::ID.gt(0_i64)))
+    .order_by(User::NAME.asc())
     .limit(25)
     .fetch_all::<User>(&pool).await?;
 
+// Pagination
+use rok_fluent::orm::pagination::Page;
+let page: Page<User> = db::select()
+    .from(User::table())
+    .where_(User::EMAIL.like("%@example.com"))
+    .paginate::<User>(1, 25, &pool).await?;
+
 // EXISTS check
 let exists: bool = db::select()
-    .from(users::table)
-    .where_(users::email.eq("alice@example.com"))
+    .from(User::table())
+    .where_(User::EMAIL.eq("alice@example.com"))
     .exists(&pool).await?;
 ```
 
@@ -70,8 +77,15 @@ let exists: bool = db::select()
 
 ```rust,no_run
 // INSERT + RETURNING *
-let created: User = db::insert_into(users::table)
+let created: User = db::insert_into(User::table())
     .values([("name", "Alice"), ("email", "alice@example.com")])
+    .returning()
+    .fetch_one::<User>(&pool).await?;
+
+// Upsert (INSERT … ON CONFLICT DO UPDATE)
+let user: User = db::insert_into(User::table())
+    .values_typed([(User::EMAIL, "alice@example.com"), (User::NAME, "Alice")])
+    .on_conflict(User::EMAIL).do_update([(User::NAME, "Alice")])
     .returning()
     .fetch_one::<User>(&pool).await?;
 ```
@@ -79,17 +93,17 @@ let created: User = db::insert_into(users::table)
 ### Update
 
 ```rust,no_run
-db::update(users::table)
-    .set("name", "Bob")
-    .where_(users::id.eq(42_i64))
+db::update(User::table())
+    .set_typed(User::NAME, "Bob")
+    .where_(User::ID.eq(42_i64))
     .execute(&pool).await?;
 ```
 
 ### Delete
 
 ```rust,no_run
-db::delete_from(users::table)
-    .where_(users::id.eq(42_i64))
+db::delete_from(User::table())
+    .where_(User::ID.eq(42_i64))
     .execute(&pool).await?;
 ```
 

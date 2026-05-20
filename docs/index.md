@@ -34,8 +34,8 @@ rok-fluent = { version = "0.4", features = ["active", "query", "postgres"] }
 |---|---|---|
 | `default` | `macros` | — |
 | `macros` | `#[derive(Model, Table, Resource, Seed)]`, `query!` | `rok-fluent-macros` |
-| **`active`** | **Active Record style** — `ModelQuery`, `PgModel`, eager loading, morph | — |
-| **`query`** | **Typed DSL** — `db::select().from(users::table).where_(users::id.eq(1))` | — |
+| **`active`** | **Active Record style** — `ModelQuery`, `PgModel`, `CrudService`, scopes, eager loading, morph | — |
+| **`query`** | **Typed DSL** — `db::select().from(User::table()).where_(User::ID.eq(1))` | — |
 | `postgres` | PostgreSQL executor, pool, transactions | `sqlx/postgres`, `tokio`, `dashmap` |
 | `sqlite` | SQLite executor | `sqlx/sqlite`, `tokio` |
 | `mysql` | MySQL executor | `sqlx/mysql`, `tokio` |
@@ -54,13 +54,13 @@ rok-fluent = { version = "0.4", features = ["active", "query", "postgres"] }
 
 ## Query Styles
 
-### Typed DSL (`query` feature) — SQL-natural, fully type-checked
+### Typed DSL (`query` feature) — OOP-natural, fully type-checked
 
 ```rust
 let users: Vec<User> = db::select()
-    .from(users::table)
-    .where_(users::email.like("%@example.com").and(users::id.gt(0_i64)))
-    .order_by(users::name.asc())
+    .from(User::table())
+    .where_(User::EMAIL.like("%@example.com").and(User::ID.gt(0_i64)))
+    .order_by(User::NAME.asc())
     .limit(25)
     .fetch_all(&pool).await?;
 ```
