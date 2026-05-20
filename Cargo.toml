@@ -6,9 +6,9 @@ resolver = "2"
 version     = "0.4.0"
 edition     = "2021"
 license     = "MIT"
-authors     = ["rok contributors"]
-repository  = "https://github.com/rok/rok-fluent"
-homepage    = "https://github.com/rok/rok-fluent"
+authors     = ["ateeq1999"]
+repository  = "https://github.com/ateeq1999/rok-fluent"
+homepage    = "https://github.com/ateeq1999/rok-fluent"
 
 [workspace.dependencies]
 thiserror   = "2"
@@ -41,8 +41,10 @@ authors.workspace   = true
 repository.workspace = true
 homepage.workspace  = true
 description = "Eloquent-inspired async ORM for Rust (PostgreSQL, MySQL, SQLite)"
-keywords    = ["orm", "database", "async", "postgres", "eloquent"]
+keywords    = ["orm", "database", "async", "postgres", "sqlx"]
 categories  = ["database"]
+readme      = "README.md"
+exclude     = ["docs/", "plan.md", "todo.md", ".github/", "target/"]
 
 [lib]
 name = "rok_fluent"

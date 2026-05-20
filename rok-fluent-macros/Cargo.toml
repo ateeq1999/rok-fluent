@@ -6,9 +6,10 @@ license.workspace    = true
 authors.workspace    = true
 repository.workspace = true
 homepage.workspace   = true
-description = "Procedural macros for rok-fluent (Model, Resource, Seed derives)"
-keywords    = ["orm", "macro", "derive", "rok"]
+description = "Procedural macros for rok-fluent (Model, Table, Resource, Seed derives)"
+keywords    = ["orm", "macro", "derive", "rok", "sqlx"]
 categories  = ["database"]
+exclude     = ["target/"]
 
 [lib]
 proc-macro = true
