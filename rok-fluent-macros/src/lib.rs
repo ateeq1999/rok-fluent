@@ -14,7 +14,7 @@ use proc_macro2::Span;
 use quote::quote;
 use syn::{parse_macro_input, Data, DeriveInput, Fields, LitStr};
 
-#[proc_macro_derive(Model, attributes(rok_orm, cast))]
+#[proc_macro_derive(Model, attributes(rok_orm, model, cast))]
 pub fn derive_model(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     expand_model(input).unwrap_or_else(|e| e.to_compile_error().into())
@@ -34,7 +34,9 @@ fn expand_model(input: DeriveInput) -> syn::Result<TokenStream> {
     let mut guarded_fields: Vec<String> = Vec::new();
 
     for attr in &input.attrs {
-        if !attr.path().is_ident("rok_orm") {
+        let is_rok_orm = attr.path().is_ident("rok_orm");
+        let is_model = attr.path().is_ident("model");
+        if !is_rok_orm && !is_model {
             continue;
         }
         attr.parse_nested_meta(|meta| {
@@ -43,7 +45,8 @@ fn expand_model(input: DeriveInput) -> syn::Result<TokenStream> {
                 let s: LitStr = value.parse()?;
                 custom_table = Some(s.value());
                 Ok(())
-            } else if meta.path.is_ident("primary_key") {
+            } else if meta.path.is_ident("primary_key") || meta.path.is_ident("pk") {
+                // `pk` is the short form available on the `#[model(...)]` namespace
                 let value = meta.value()?;
                 let s: LitStr = value.parse()?;
                 struct_pk = Some(s.value());
@@ -102,9 +105,15 @@ fn expand_model(input: DeriveInput) -> syn::Result<TokenStream> {
                     let _: LitStr = value.parse()?;
                 }
                 Ok(())
+            } else if is_model {
+                Err(meta.error(
+                    "unknown #[model(...)] struct attribute.\n\
+                    Fix: supported attrs are table, pk, timestamps, soft_delete, \
+                    fillable, guarded",
+                ))
             } else {
                 Err(meta.error(
-                    "unknown rok_orm struct attribute.\n\
+                    "unknown #[rok_orm(...)] struct attribute.\n\
                     Fix: supported attrs are table, primary_key, primary_keys, id, \
                     soft_delete, timestamps, hidden, computed, fillable, guarded, scopes, \
                     tenant_scoped, typed_queries",
@@ -160,12 +169,14 @@ fn expand_model(input: DeriveInput) -> syn::Result<TokenStream> {
         let mut index_kind: Option<String> = None;
 
         for attr in &field.attrs {
-            if attr.path().is_ident("rok_orm") {
+            if attr.path().is_ident("rok_orm") || attr.path().is_ident("model") {
+                let is_field_model = attr.path().is_ident("model");
                 attr.parse_nested_meta(|meta| {
                     if meta.path.is_ident("skip") {
                         skip = true;
                         Ok(())
-                    } else if meta.path.is_ident("primary_key") {
+                    } else if meta.path.is_ident("primary_key") || meta.path.is_ident("pk") {
+                        // `pk` is the short form available on `#[model(...)]`
                         is_pk = true;
                         Ok(())
                     } else if meta.path.is_ident("column") {
@@ -184,9 +195,14 @@ fn expand_model(input: DeriveInput) -> syn::Result<TokenStream> {
                         Ok(())
                     } else if meta.path.is_ident("hidden") {
                         Ok(())
+                    } else if is_field_model {
+                        Err(meta.error(
+                            "unknown #[model(...)] field attribute.\n\
+                            Fix: supported attrs are skip, pk, column",
+                        ))
                     } else {
                         Err(meta.error(
-                            "unknown rok_orm field attribute.\n\
+                            "unknown #[rok_orm(...)] field attribute.\n\
                             Fix: supported attrs are skip, primary_key, column, hidden, \
                             index, unique_index, full_text_index",
                         ))
