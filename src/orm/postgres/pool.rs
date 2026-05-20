@@ -149,6 +149,24 @@ pub async fn aggregate<T: Model>(
     executor::aggregate(&pool, builder, agg_expr).await
 }
 
+// ── Pool health ───────────────────────────────────────────────────────────────
+
+/// Return `true` if the pool can execute a lightweight round-trip query.
+///
+/// Uses `SELECT 1` — suitable for health-check endpoints and readiness probes.
+///
+/// ```rust,no_run
+/// # async fn example(pool: sqlx::PgPool) -> Result<(), sqlx::Error> {
+/// if rok_fluent::orm::postgres::pool::ping(&pool).await {
+///     println!("database is reachable");
+/// }
+/// # Ok(())
+/// # }
+/// ```
+pub async fn ping(pool: &PgPool) -> bool {
+    sqlx::query("SELECT 1").execute(pool).await.is_ok()
+}
+
 // ── Pool metrics ──────────────────────────────────────────────────────────────
 
 /// A point-in-time snapshot of a connection pool's resource usage.

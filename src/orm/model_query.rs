@@ -656,6 +656,19 @@ where
         self.first().await?.ok_or(sqlx::Error::RowNotFound)
     }
 
+    /// Fetch the first matching row, or return `M::default()` when no rows match.
+    pub async fn first_or_default(self) -> Result<M, sqlx::Error>
+    where
+        M: Default,
+    {
+        Ok(self.first().await?.unwrap_or_default())
+    }
+
+    /// Fetch the first matching row, or call `f` to produce a fallback value.
+    pub async fn first_or_else(self, f: impl FnOnce() -> M) -> Result<M, sqlx::Error> {
+        Ok(self.first().await?.unwrap_or_else(f))
+    }
+
     /// Return the count of matching rows.
     pub async fn count(self) -> Result<i64, sqlx::Error> {
         let pool_override = self.named_pool_override();
