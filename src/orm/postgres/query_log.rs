@@ -1,0 +1,61 @@
+//! Optional query logging middleware.
+//!
+//! Records execution time and SQL for slow queries.
+
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+
+/// A single logged query entry.
+#[derive(Debug, Clone)]
+pub struct QueryLogEntry {
+    /// The SQL statement that was executed.
+    pub sql: String,
+    /// Execution time in milliseconds.
+    pub duration_ms: u64,
+    /// Number of rows affected or returned.
+    pub rows_affected: u64,
+    /// The table name (from the model).
+    pub table: String,
+}
+
+/// A shared logging callback type.
+pub type QueryLogger = Arc<dyn Fn(&QueryLogEntry) + Send + Sync>;
+
+static SLOW_QUERY_THRESHOLD_MS: AtomicU64 = AtomicU64::new(200);
+
+/// Set the slow-query threshold in milliseconds.
+///
+/// Queries slower than this will be passed to the registered logger.
+pub fn set_slow_threshold(ms: u64) {
+    SLOW_QUERY_THRESHOLD_MS.store(ms, Ordering::Relaxed);
+}
+
+/// Return the current slow-query threshold in milliseconds.
+pub fn slow_threshold() -> u64 {
+    SLOW_QUERY_THRESHOLD_MS.load(Ordering::Relaxed)
+}
+
+static LOGGER: once_cell::sync::Lazy<std::sync::Mutex<Option<QueryLogger>>> =
+    once_cell::sync::Lazy::new(|| std::sync::Mutex::new(None));
+
+/// Register a callback that is called for every slow query.
+pub fn set_logger(logger: QueryLogger) {
+    if let Ok(mut l) = LOGGER.lock() {
+        *l = Some(logger);
+    }
+}
+
+pub(crate) fn log_query(sql: &str, duration_ms: u64, rows_affected: u64, table: &str) {
+    if duration_ms >= slow_threshold() {
+        if let Ok(l) = LOGGER.lock() {
+            if let Some(ref logger) = *l {
+                logger(&QueryLogEntry {
+                    sql: sql.to_string(),
+                    duration_ms,
+                    rows_affected,
+                    table: table.to_string(),
+                });
+            }
+        }
+    }
+}

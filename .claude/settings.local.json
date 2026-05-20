@@ -7,7 +7,8 @@
       "Bash(Out-Host)",
       "Bash(cargo metadata *)",
       "Bash(grep -E \"\\\\.\\(toml|md|txt|yaml\\)$\")",
-      "PowerShell($j = Get-Content \"d:\\\\DEV\\\\open-source\\\\rok-fluent\\\\.claude\\\\settings.json\" -Raw | ConvertFrom-Json; $j.hooks.PostToolUse[0].hooks[0]; $j.hooks.Stop[0].hooks[0])"
+      "PowerShell($j = Get-Content \"d:\\\\DEV\\\\open-source\\\\rok-fluent\\\\.claude\\\\settings.json\" -Raw | ConvertFrom-Json; $j.hooks.PostToolUse[0].hooks[0]; $j.hooks.Stop[0].hooks[0])",
+      "Bash(cargo check *)"
     ]
   }
 }

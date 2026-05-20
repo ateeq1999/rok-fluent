@@ -1,6 +1,133 @@
+[workspace]
+members = [".", "rok-fluent-macros"]
+resolver = "2"
+
+[workspace.package]
+version     = "0.4.0"
+edition     = "2021"
+license     = "MIT"
+authors     = ["rok contributors"]
+repository  = "https://github.com/rok/rok-fluent"
+homepage    = "https://github.com/rok/rok-fluent"
+
+[workspace.dependencies]
+thiserror   = "2"
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
+base64      = "0.22"
+chrono      = { version = "0.4", features = ["serde"] }
+uuid        = { version = "1", features = ["v4", "serde"] }
+once_cell   = { version = "1" }
+rand        = "0.8"
+sqlx        = { version = "0.8", default-features = false, features = ["macros", "chrono", "uuid", "json"] }
+tokio       = { version = "1",   default-features = false }
+axum        = { version = "0.8" }
+tower       = { version = "0.5" }
+http        = { version = "1"   }
+dashmap     = { version = "6"   }
+syn         = { version = "2",   features = ["full"] }
+quote       = "1"
+proc-macro2 = "1"
+heck        = "0.5"
+
+# ── Package ──────────────────────────────────────────────────────────────────
+
 [package]
-name = "rok-fluent"
-version = "0.1.0"
-edition = "2024"
+name        = "rok-fluent"
+version.workspace   = true
+edition.workspace   = true
+license.workspace   = true
+authors.workspace   = true
+repository.workspace = true
+homepage.workspace  = true
+description = "Eloquent-inspired async ORM for Rust (PostgreSQL, MySQL, SQLite)"
+keywords    = ["orm", "database", "async", "postgres", "eloquent"]
+categories  = ["database"]
+
+[lib]
+name = "rok_fluent"
+path = "src/lib.rs"
+
+# ── Features ─────────────────────────────────────────────────────────────────
+
+[features]
+# Always-on: derive macros (Model, Resource, Seed, query!)
+default = ["macros"]
+
+# Proc-macro derive support
+macros = ["dep:rok-fluent-macros"]
+
+# Database backends
+postgres = [
+    "dep:sqlx", "sqlx/postgres", "sqlx/runtime-tokio-native-tls",
+    "dep:tokio", "tokio/rt",
+    "dep:futures-core", "dep:futures", "dep:dashmap",
+]
+sqlite = [
+    "dep:sqlx", "sqlx/sqlite", "sqlx/runtime-tokio-native-tls",
+    "dep:tokio", "tokio/rt",
+]
+mysql = [
+    "dep:sqlx", "sqlx/mysql", "sqlx/runtime-tokio-native-tls",
+    "dep:tokio", "tokio/rt",
+]
+
+# Web / tower integration (implies postgres)
+axum = ["dep:axum", "dep:tower", "postgres"]
+
+# Observability
+tracing = ["dep:tracing"]
+metrics = ["dep:metrics"]
+
+# Multi-tenancy (task-local tenant ID + Tower layer)
+tenant = ["dep:tower", "dep:http", "dep:tokio", "tokio/rt"]
+
+# Read-replica routing strategies
+replica = []
+
+# Test / seeding factories
+factory          = []
+factory-postgres = ["factory", "postgres"]
+
+# Migrations
+migrate          = ["dep:async-trait", "dep:anyhow"]
+migrate-postgres = ["migrate", "postgres"]
+migrate-sqlite   = ["migrate", "sqlite"]
+migrate-mysql    = ["migrate", "mysql"]
+
+# Convenience bundle
+full = [
+    "macros", "postgres", "axum", "tracing", "metrics",
+    "tenant", "replica", "factory-postgres", "migrate-postgres",
+]
+
+# ── Dependencies ─────────────────────────────────────────────────────────────
 
 [dependencies]
+# always-on
+thiserror  = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+base64     = { workspace = true }
+chrono     = { workspace = true }
+uuid       = { workspace = true }
+once_cell  = { workspace = true }
+rand       = { workspace = true }
+
+# feature-gated
+rok-fluent-macros = { version = "0.4", path = "rok-fluent-macros", optional = true }
+sqlx        = { workspace = true, optional = true }
+tokio       = { workspace = true, optional = true }
+futures-core = { version = "0.3", optional = true }
+futures      = { version = "0.3", optional = true }
+dashmap      = { workspace = true, optional = true }
+axum         = { workspace = true, optional = true }
+tower        = { workspace = true, optional = true }
+http         = { workspace = true, optional = true }
+tracing      = { version = "0.1", optional = true }
+metrics      = { version = "0.24", optional = true }
+async-trait  = { version = "0.1", optional = true }
+anyhow       = { version = "1",   optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
