@@ -95,3 +95,36 @@ Feature-matrix spot-check passes for all feature combinations.
 - [ ] `rok db rollback` → `MigrationRunner::rollback()`
 - [ ] `rok db status` → `MigrationRunner::status()`
 - [ ] `rok db make <name>` → scaffold a timestamped migration file
+
+## ✅ Phase 21 — OOP Primary API: `User::table()` + `User::ID` (COMPLETE as of 2026-05-21)
+
+- [x] `#[derive(Table)]` generates `UserTable` struct + `impl Table for UserTable`
+- [x] `User::table() -> UserTable` factory method
+- [x] `User::ID`, `User::NAME`, … SCREAMING_SNAKE_CASE `Column<T,V>` constants
+- [x] Module alias `pub mod users { table, id, name, … }` (secondary)
+- [x] `heck::ToShoutySnakeCase` used for constant naming
+
+## ✅ Phase 22 — DSL JOIN Builder (COMPLETE as of 2026-05-21)
+
+- [x] `Expr::ColEq`, `Expr::ILike`, `Expr::Between`, `Expr::NotBetween`, `Expr::Raw`
+- [x] `Column::references()` / `Column::eq_col()` → `Expr::ColEq`
+- [x] `SelectBuilder::inner_join()`, `left_join()`, `right_join()`, `cross_join()`
+- [x] `SelectBuilder::or_where()`
+- [x] `Table` trait: static `table_name()` + instance `name()` for join builders
+- [x] Macro generates both methods in `impl Table for UserTable`
+
+## ✅ Phase 23 — DSL Pagination on SelectBuilder (COMPLETE as of 2026-05-21)
+
+- [x] `SelectBuilder::paginate(page, per_page, pool)` → `Page<T>` (offset + count)
+- [x] `SelectBuilder::simple_paginate(page, per_page, pool)` → `SimplePage<T>`
+- [x] `SelectBuilder::cursor_paginate(cursor_col, cursor, per_page, pool)` → `CursorPage<T>`
+- [x] Cursor value extracted from raw `PgRow` before `T` deserialisation
+- [x] `SelectBuilder::count(pool)` / `exists(pool)` terminals
+
+## ✅ Phase 24 — DSL Aggregators (COMPLETE as of 2026-05-21)
+
+- [x] `AggExpr` struct with `alias()`, comparison operators for HAVING
+- [x] `Column::count()`, `count_distinct()`, `sum()`, `avg()`, `min()`, `max()`
+- [x] `SelectBuilder::group_by()`, `having()`, `agg_col()`
+- [x] `Expr::AggCmp` variant rendered in `to_sql_pg` / `to_sql_qmark`
+- [x] Re-exported: `AggExpr`, `OrderExpr`, `NullsOrder`, `OrderDir`, `Join`, `JoinKind`

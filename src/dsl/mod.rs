@@ -49,11 +49,11 @@ mod insert;
 mod select;
 mod update;
 
-pub use column::Column;
+pub use column::{AggExpr, Column, NullsOrder, OrderDir, OrderExpr};
 pub use db::{delete_from, insert_into, select, update};
 pub use delete::DeleteBuilder;
 pub use expr::Expr;
 pub use insert::InsertBuilder;
-pub use select::SelectBuilder;
+pub use select::{Join, JoinKind, SelectBuilder};
 pub use table::Table;
 pub use update::UpdateBuilder;

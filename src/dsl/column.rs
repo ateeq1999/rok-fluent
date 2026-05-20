@@ -1,24 +1,23 @@
-//! [`Column`] — a typed reference to a table column.
+//! [`Column`] — typed column reference, ordering, and aggregate expressions.
 //!
 //! Every field on a `#[derive(Table)]` struct generates a
-//! `pub static <field>: Column<StructType, FieldType>` constant in a
-//! companion module.  These column values are zero-size and used only at
-//! the type/query-building level — they carry no runtime data.
+//! `pub const FIELD_NAME: Column<StructType, FieldType>` constant on the struct.
+//! These column values are zero-size and used only at the type/query-building level.
 
 use super::expr::Expr;
 use crate::core::condition::SqlValue;
 
-/// A typed column reference: `<TableMarker, ValueType>`.
+/// A typed column reference: `Column<TableStruct, ValueType>`.
 ///
 /// Created by `#[derive(Table)]` — users do not construct these directly.
 ///
 /// ```rust,ignore
 /// // Generated for `pub id: i64` on a `#[derive(Table)] struct User`:
-/// // pub static id: Column<User, i64> = Column::new("users", "id");
+/// // pub const ID: Column<User, i64> = Column::new("users", "id");
 ///
 /// // Then in queries:
-/// users::id.eq(42_i64)   // → Expr::Eq(Column, SqlValue)
-/// users::name.like("%Al%") // → Expr::Like(Column, SqlValue)
+/// User::ID.eq(42_i64)       // → Expr::Eq(...)
+/// User::NAME.like("%Al%")   // → Expr::Like(...)
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct Column<T, V> {
@@ -29,7 +28,7 @@ pub struct Column<T, V> {
 }
 
 impl<T, V> Column<T, V> {
-    /// Construct a column reference.  Called by `#[derive(Table)]` generated code.
+    /// Construct a column reference. Called by `#[derive(Table)]` generated code.
     pub const fn new(table: &'static str, name: &'static str) -> Self {
         Self {
             table,
@@ -93,6 +92,11 @@ impl<T, V: Into<SqlValue>> Column<T, V> {
         Expr::NotLike(self.qualified(), pattern.into())
     }
 
+    /// `column ILIKE pattern` — PostgreSQL case-insensitive LIKE.
+    pub fn ilike(self, pattern: impl Into<SqlValue>) -> Expr {
+        Expr::ILike(self.qualified(), pattern.into())
+    }
+
     /// `column IN (v1, v2, …)`
     pub fn in_(self, vals: impl IntoIterator<Item = impl Into<SqlValue>>) -> Expr {
         Expr::In(self.qualified(), vals.into_iter().map(Into::into).collect())
@@ -102,7 +106,19 @@ impl<T, V: Into<SqlValue>> Column<T, V> {
     pub fn not_in(self, vals: impl IntoIterator<Item = impl Into<SqlValue>>) -> Expr {
         Expr::NotIn(self.qualified(), vals.into_iter().map(Into::into).collect())
     }
+
+    /// `column BETWEEN lo AND hi`
+    pub fn between(self, lo: impl Into<SqlValue>, hi: impl Into<SqlValue>) -> Expr {
+        Expr::Between(self.qualified(), lo.into(), hi.into())
+    }
+
+    /// `column NOT BETWEEN lo AND hi`
+    pub fn not_between(self, lo: impl Into<SqlValue>, hi: impl Into<SqlValue>) -> Expr {
+        Expr::NotBetween(self.qualified(), lo.into(), hi.into())
+    }
 }
+
+// ── Null checks and ordering (no value bound required) ───────────────────────
 
 impl<T, V> Column<T, V> {
     /// `column IS NULL`
@@ -115,30 +131,187 @@ impl<T, V> Column<T, V> {
         Expr::IsNotNull(self.qualified())
     }
 
-    /// `column ASC` (for `order_by`)
+    /// `column ASC` — pass to `.order_by()`.
     pub fn asc(self) -> OrderExpr {
         OrderExpr {
             col: self.qualified(),
             dir: OrderDir::Asc,
+            nulls: NullsOrder::Default,
         }
     }
 
-    /// `column DESC` (for `order_by`)
+    /// `column DESC` — pass to `.order_by()`.
     pub fn desc(self) -> OrderExpr {
         OrderExpr {
             col: self.qualified(),
             dir: OrderDir::Desc,
+            nulls: NullsOrder::Default,
         }
+    }
+
+    /// `column ASC NULLS LAST`
+    pub fn asc_nulls_last(self) -> OrderExpr {
+        OrderExpr {
+            col: self.qualified(),
+            dir: OrderDir::Asc,
+            nulls: NullsOrder::Last,
+        }
+    }
+
+    /// `column ASC NULLS FIRST`
+    pub fn asc_nulls_first(self) -> OrderExpr {
+        OrderExpr {
+            col: self.qualified(),
+            dir: OrderDir::Asc,
+            nulls: NullsOrder::First,
+        }
+    }
+
+    /// `column DESC NULLS LAST`
+    pub fn desc_nulls_last(self) -> OrderExpr {
+        OrderExpr {
+            col: self.qualified(),
+            dir: OrderDir::Desc,
+            nulls: NullsOrder::Last,
+        }
+    }
+
+    /// `column DESC NULLS FIRST`
+    pub fn desc_nulls_first(self) -> OrderExpr {
+        OrderExpr {
+            col: self.qualified(),
+            dir: OrderDir::Desc,
+            nulls: NullsOrder::First,
+        }
+    }
+
+    /// Column-to-column equality for JOIN ON clauses: `self = other`.
+    ///
+    /// ```rust,ignore
+    /// .inner_join(Post::table(), Post::USER_ID.references(User::ID))
+    /// ```
+    pub fn references<T2, V2>(self, other: Column<T2, V2>) -> Expr {
+        Expr::ColEq(self.qualified(), other.qualified())
+    }
+
+    /// Column-to-column equality — alias for [`references`](Self::references)
+    /// intended for use in `WHERE` expressions.
+    pub fn eq_col<T2, V2>(self, other: Column<T2, V2>) -> Expr {
+        Expr::ColEq(self.qualified(), other.qualified())
+    }
+}
+
+// ── Aggregate expressions (Phase 24) ─────────────────────────────────────────
+
+impl<T, V> Column<T, V> {
+    /// `COUNT(column)` — returns an [`AggExpr`] for use in `.columns()` or `.having()`.
+    pub fn count(self) -> AggExpr {
+        AggExpr::new(format!("COUNT({})", self.qualified()))
+    }
+
+    /// `COUNT(DISTINCT column)`
+    pub fn count_distinct(self) -> AggExpr {
+        AggExpr::new(format!("COUNT(DISTINCT {})", self.qualified()))
+    }
+
+    /// `SUM(column)`
+    pub fn sum(self) -> AggExpr {
+        AggExpr::new(format!("SUM({})", self.qualified()))
+    }
+
+    /// `AVG(column)`
+    pub fn avg(self) -> AggExpr {
+        AggExpr::new(format!("AVG({})", self.qualified()))
+    }
+
+    /// `MIN(column)`
+    pub fn min(self) -> AggExpr {
+        AggExpr::new(format!("MIN({})", self.qualified()))
+    }
+
+    /// `MAX(column)`
+    pub fn max(self) -> AggExpr {
+        AggExpr::new(format!("MAX({})", self.qualified()))
+    }
+}
+
+// ── AggExpr ───────────────────────────────────────────────────────────────────
+
+/// An aggregate function expression — used in `HAVING` clauses and in projection.
+///
+/// Obtained from column aggregate methods like `.count()`, `.sum()`, `.avg()`, etc.
+///
+/// ```rust,ignore
+/// // HAVING COUNT("orders"."id") > 5
+/// .having(Order::ID.count().gt(5_i64))
+/// ```
+#[derive(Debug, Clone)]
+pub struct AggExpr {
+    /// Pre-rendered aggregate SQL, e.g. `COUNT("users"."id")`.
+    pub(crate) sql: String,
+    /// Optional alias for use in SELECT projections.
+    alias: Option<String>,
+}
+
+impl AggExpr {
+    pub(crate) fn new(sql: String) -> Self {
+        Self { sql, alias: None }
+    }
+
+    /// Assign an alias: `COUNT("users"."id") AS total`.
+    #[must_use]
+    pub fn alias(mut self, name: impl Into<String>) -> Self {
+        self.alias = Some(name.into());
+        self
+    }
+
+    /// Render the aggregate expression for use in SELECT projection.
+    pub fn to_projection_sql(&self) -> String {
+        match &self.alias {
+            Some(a) => format!("{} AS \"{}\"", self.sql, a),
+            None => self.sql.clone(),
+        }
+    }
+
+    /// `AGG > value` — produces a HAVING predicate.
+    pub fn gt(self, val: impl Into<SqlValue>) -> Expr {
+        Expr::AggCmp(self.sql, ">", val.into())
+    }
+
+    /// `AGG >= value`
+    pub fn gte(self, val: impl Into<SqlValue>) -> Expr {
+        Expr::AggCmp(self.sql, ">=", val.into())
+    }
+
+    /// `AGG < value`
+    pub fn lt(self, val: impl Into<SqlValue>) -> Expr {
+        Expr::AggCmp(self.sql, "<", val.into())
+    }
+
+    /// `AGG <= value`
+    pub fn lte(self, val: impl Into<SqlValue>) -> Expr {
+        Expr::AggCmp(self.sql, "<=", val.into())
+    }
+
+    /// `AGG = value`
+    pub fn eq(self, val: impl Into<SqlValue>) -> Expr {
+        Expr::AggCmp(self.sql, "=", val.into())
+    }
+
+    /// `AGG != value`
+    pub fn ne(self, val: impl Into<SqlValue>) -> Expr {
+        Expr::AggCmp(self.sql, "!=", val.into())
     }
 }
 
 // ── OrderExpr ─────────────────────────────────────────────────────────────────
 
-/// A column ordering expression produced by `.asc()` / `.desc()`.
+/// A column ordering expression produced by `.asc()` / `.desc()` etc.
 #[derive(Debug, Clone)]
 pub struct OrderExpr {
     pub(crate) col: String,
     pub(crate) dir: OrderDir,
+    pub(crate) nulls: NullsOrder,
 }
 
 /// Sort direction.
@@ -150,13 +323,29 @@ pub enum OrderDir {
     Desc,
 }
 
+/// NULL ordering modifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NullsOrder {
+    /// Database default — no explicit NULLS FIRST / NULLS LAST.
+    Default,
+    /// NULLS FIRST
+    First,
+    /// NULLS LAST
+    Last,
+}
+
 impl OrderExpr {
-    /// Render as `"table"."col" ASC` or `"table"."col" DESC`.
+    /// Render as `"table"."col" ASC [NULLS FIRST|LAST]`.
     pub fn to_sql(&self) -> String {
         let dir = match self.dir {
             OrderDir::Asc => "ASC",
             OrderDir::Desc => "DESC",
         };
-        format!("{} {}", self.col, dir)
+        let nulls = match self.nulls {
+            NullsOrder::Default => String::new(),
+            NullsOrder::First => " NULLS FIRST".to_string(),
+            NullsOrder::Last => " NULLS LAST".to_string(),
+        };
+        format!("{} {}{}", self.col, dir, nulls)
     }
 }

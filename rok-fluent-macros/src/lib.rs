@@ -8,7 +8,7 @@
 //! | `#[derive(Seed)]` | derive | Generate `seed(pool, n)` scaffolding |
 //! | `query!` | function-like | Shorthand for building a `QueryBuilder` |
 
-use heck::ToSnakeCase;
+use heck::{ToShoutySnakeCase, ToSnakeCase};
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
@@ -883,12 +883,22 @@ pub fn derive_seed(input: TokenStream) -> TokenStream {
 
 // ── #[derive(Table)] ──────────────────────────────────────────────────────────
 
-/// Generate a typed DSL companion module for use with `feature = "query"`.
+/// Generate a typed DSL API for use with `feature = "query"`.
+///
+/// ## Generated items
+///
+/// Given `struct User` with `#[table(name = "users")]`:
+///
+/// 1. **Named table type** `UserTable` implementing `Table`
+/// 2. **OOP constants** on `impl User`:
+///    - `User::table() -> UserTable`
+///    - `User::ID`, `User::NAME`, … (`SCREAMING_SNAKE_CASE`)
+/// 3. **Module alias** `pub mod users` (secondary, SQL-mirroring style)
 ///
 /// ```rust,ignore
 /// use rok_fluent::dsl::db;
 ///
-/// #[derive(Debug, Table, sqlx::FromRow)]
+/// #[derive(Debug, sqlx::FromRow, rok_fluent::TableDerive)]
 /// #[table(name = "users")]
 /// pub struct User {
 ///     pub id:    i64,
@@ -896,17 +906,11 @@ pub fn derive_seed(input: TokenStream) -> TokenStream {
 ///     pub email: String,
 /// }
 ///
-/// // Generated:
-/// // pub mod users {
-/// //     pub const table: TableMarker = TableMarker;
-/// //     pub const id:    Column<User, i64>    = Column::new("users", "id");
-/// //     pub const name:  Column<User, String> = Column::new("users", "name");
-/// //     pub const email: Column<User, String> = Column::new("users", "email");
-/// // }
+/// // OOP style (primary):
+/// db::select().from(User::table()).where_(User::ID.eq(42_i64));
 ///
-/// let q = db::select()
-///     .from(users::table)
-///     .where_(users::id.eq(42_i64));
+/// // Module alias (secondary):
+/// db::select().from(users::table).where_(users::id.eq(42_i64));
 /// ```
 #[proc_macro_derive(Table, attributes(table))]
 pub fn derive_table(input: TokenStream) -> TokenStream {
@@ -929,9 +933,18 @@ fn expand_table(input: DeriveInput) -> syn::Result<TokenStream> {
                 let s: LitStr = value.parse()?;
                 custom_table = Some(s.value());
                 Ok(())
+            } else if meta.path.is_ident("skip")
+                || meta.path.is_ident("searchable")
+                || meta.path.is_ident("rename_all")
+            {
+                // Struct-level attrs consumed elsewhere; skip silently.
+                if meta.input.peek(syn::Token![=]) {
+                    let _: LitStr = meta.value()?.parse()?;
+                }
+                Ok(())
             } else {
                 Err(meta.error(
-                    "unknown table attribute.\n\
+                    "unknown #[table(...)] struct attribute.\n\
                      Fix: expected `#[table(name = \"table_name\")]`",
                 ))
             }
@@ -959,6 +972,7 @@ fn expand_table(input: DeriveInput) -> syn::Result<TokenStream> {
         }
     };
 
+    // (rust_ident, field_type, sql_column_name)
     let mut col_defs: Vec<(syn::Ident, syn::Type, String)> = Vec::new();
 
     for field in fields.iter() {
@@ -981,9 +995,29 @@ fn expand_table(input: DeriveInput) -> syn::Result<TokenStream> {
                         let s: LitStr = value.parse()?;
                         col_override = Some(s.value());
                         Ok(())
+                    } else if meta.path.is_ident("has_one")
+                        || meta.path.is_ident("has_many")
+                        || meta.path.is_ident("belongs_to")
+                        || meta.path.is_ident("many_to_many")
+                        || meta.path.is_ident("has_one_through")
+                        || meta.path.is_ident("has_many_through")
+                        || meta.path.is_ident("belongs_to_through")
+                        || meta.path.is_ident("morph_one")
+                        || meta.path.is_ident("morph_many")
+                        || meta.path.is_ident("morph_to")
+                        || meta.path.is_ident("morph_to_many")
+                        || meta.path.is_ident("searchable")
+                    {
+                        // Relationship / search annotations — skip the field from column gen.
+                        skip = true;
+                        // Consume any remaining tokens in this meta item.
+                        while !meta.input.is_empty() {
+                            let _ = meta.input.parse::<proc_macro2::TokenTree>();
+                        }
+                        Ok(())
                     } else {
                         Err(meta.error(
-                            "unknown table field attribute.\n\
+                            "unknown #[table(...)] field attribute.\n\
                              Fix: expected `#[table(skip)]` or `#[table(column = \"col_name\")]`",
                         ))
                     }
@@ -999,44 +1033,87 @@ fn expand_table(input: DeriveInput) -> syn::Result<TokenStream> {
         col_defs.push((field_ident, field.ty.clone(), col_name));
     }
 
+    // ── Named table type ──────────────────────────────────────────────────────
+    let table_type_ident = syn::Ident::new(&format!("{struct_name}Table"), Span::call_site());
     let mod_ident = syn::Ident::new(&table, Span::call_site());
 
-    let col_consts: Vec<proc_macro2::TokenStream> = col_defs
+    // ── SCREAMING_SNAKE_CASE constants for the OOP impl ───────────────────────
+    let oop_consts: Vec<proc_macro2::TokenStream> = col_defs
         .iter()
         .map(|(field_ident, field_ty, col_name)| {
+            let const_ident = syn::Ident::new(
+                &field_ident.to_string().to_shouty_snake_case(),
+                Span::call_site(),
+            );
             quote! {
-                #[allow(non_upper_case_globals)]
-                pub const #field_ident: ::rok_fluent::dsl::Column<super::#struct_name, #field_ty> =
+                pub const #const_ident: ::rok_fluent::dsl::Column<#struct_name, #field_ty> =
                     ::rok_fluent::dsl::Column::new(#table, #col_name);
             }
         })
         .collect();
 
+    // ── Lowercase aliases for the module (SQL-mirroring style) ────────────────
+    let mod_col_aliases: Vec<proc_macro2::TokenStream> = col_defs
+        .iter()
+        .map(|(field_ident, field_ty, _col_name)| {
+            let const_ident = syn::Ident::new(
+                &field_ident.to_string().to_shouty_snake_case(),
+                Span::call_site(),
+            );
+            quote! {
+                #[allow(non_upper_case_globals)]
+                pub const #field_ident: ::rok_fluent::dsl::Column<super::#struct_name, #field_ty> =
+                    super::#struct_name::#const_ident;
+            }
+        })
+        .collect();
+
     let expanded = quote! {
-        /// DSL companion module generated by `#[derive(Table)]`.
+        #[cfg(feature = "query")]
+        #[derive(Debug, Clone, Copy)]
+        pub struct #table_type_ident;
+
+        #[cfg(feature = "query")]
+        impl ::rok_fluent::dsl::Table for #table_type_ident {
+            fn table_name() -> &'static str
+            where
+                Self: Sized,
+            {
+                #table
+            }
+
+            fn name(&self) -> &'static str {
+                #table
+            }
+        }
+
+        /// OOP-style DSL API generated by `#[derive(Table)]`.
         ///
-        /// Contains a `table` constant and one typed `Column` per field.
+        /// Use `User::table()` in `.from()` and `User::ID`, `User::NAME`, … in
+        /// `.where_()`, `.order_by()`, etc.
+        #[cfg(feature = "query")]
+        impl #struct_name {
+            /// Table marker for use with `db::select().from(User::table())`.
+            pub fn table() -> #table_type_ident {
+                #table_type_ident
+            }
+
+            #(#oop_consts)*
+        }
+
+        /// SQL-mirroring module alias generated by `#[derive(Table)]` (secondary style).
+        ///
+        /// All constants here are aliases for the OOP constants on the struct.
         #[cfg(feature = "query")]
         #[allow(non_snake_case, dead_code)]
         pub mod #mod_ident {
             #[allow(unused_imports)]
             use super::*;
 
-            /// Marker type implementing [`::rok_fluent::dsl::Table`] for this table.
-            #[derive(Debug, Clone, Copy)]
-            pub struct TableMarker;
-
-            impl ::rok_fluent::dsl::Table for TableMarker {
-                fn table_name() -> &'static str {
-                    #table
-                }
-            }
-
             #[allow(non_upper_case_globals)]
-            /// Table singleton for use with `db::select().from(users::table)`.
-            pub const table: TableMarker = TableMarker;
+            pub const table: super::#table_type_ident = super::#table_type_ident;
 
-            #(#col_consts)*
+            #(#mod_col_aliases)*
         }
     };
 

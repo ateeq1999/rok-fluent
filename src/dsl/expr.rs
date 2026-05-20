@@ -1,4 +1,4 @@
-//! [`Expr`] — composable boolean expression tree for DSL `WHERE` clauses.
+//! [`Expr`] — composable boolean expression tree for DSL `WHERE` / `HAVING` clauses.
 
 use crate::core::condition::SqlValue;
 
@@ -8,9 +8,10 @@ use crate::core::condition::SqlValue;
 /// and composed with [`and`](Expr::and) / [`or`](Expr::or).
 ///
 /// ```rust,ignore
-/// let expr = users::id.eq(1_i64)
-///     .and(users::email.like("%@example.com"));
+/// let expr = User::ID.eq(1_i64)
+///     .and(User::EMAIL.like("%@example.com"));
 /// ```
+#[non_exhaustive]
 #[derive(Debug, Clone)]
 pub enum Expr {
     /// `col = val`
@@ -29,6 +30,8 @@ pub enum Expr {
     Like(String, SqlValue),
     /// `col NOT LIKE pattern`
     NotLike(String, SqlValue),
+    /// `col ILIKE pattern` — PostgreSQL case-insensitive LIKE
+    ILike(String, SqlValue),
     /// `col IN (...)`
     In(String, Vec<SqlValue>),
     /// `col NOT IN (...)`
@@ -37,12 +40,22 @@ pub enum Expr {
     IsNull(String),
     /// `col IS NOT NULL`
     IsNotNull(String),
+    /// `col BETWEEN lo AND hi`
+    Between(String, SqlValue, SqlValue),
+    /// `col NOT BETWEEN lo AND hi`
+    NotBetween(String, SqlValue, SqlValue),
+    /// `left_col = right_col` — column-to-column equality for JOIN ON clauses
+    ColEq(String, String),
+    /// Aggregate comparison for HAVING: `AGG_SQL op val` (e.g. `COUNT("t"."id") > $N`)
+    AggCmp(String, &'static str, SqlValue),
     /// `left AND right`
     And(Box<Expr>, Box<Expr>),
     /// `left OR right`
     Or(Box<Expr>, Box<Expr>),
     /// `NOT expr`
     Not(Box<Expr>),
+    /// Raw SQL fragment (no parameter binding).
+    Raw(String),
 }
 
 impl std::ops::Not for Expr {
@@ -63,6 +76,13 @@ impl Expr {
     /// Combine with `OR`.
     pub fn or(self, other: Expr) -> Expr {
         Expr::Or(Box::new(self), Box::new(other))
+    }
+
+    /// Raw SQL escape hatch — inserted verbatim with no parameter binding.
+    ///
+    /// Use only when no typed alternative exists.
+    pub fn raw(sql: impl Into<String>) -> Expr {
+        Expr::Raw(sql.into())
     }
 
     /// Render the expression to a parameterised SQL fragment.
@@ -88,6 +108,7 @@ impl Expr {
             Expr::Lte(col, v) => self.binary_op(col, "<=", v, offset, ph),
             Expr::Like(col, v) => self.binary_op(col, "LIKE", v, offset, ph),
             Expr::NotLike(col, v) => self.binary_op(col, "NOT LIKE", v, offset, ph),
+            Expr::ILike(col, v) => self.binary_op(col, "ILIKE", v, offset, ph),
 
             Expr::In(col, vals) => {
                 let phs: Vec<String> = vals
@@ -122,6 +143,51 @@ impl Expr {
             Expr::IsNull(col) => (format!("{col} IS NULL"), vec![]),
             Expr::IsNotNull(col) => (format!("{col} IS NOT NULL"), vec![]),
 
+            Expr::Between(col, lo, hi) => {
+                let lo_ph = if ph == '?' {
+                    "?".into()
+                } else {
+                    format!("${offset}")
+                };
+                let hi_ph = if ph == '?' {
+                    "?".into()
+                } else {
+                    format!("${}", offset + 1)
+                };
+                (
+                    format!("{col} BETWEEN {lo_ph} AND {hi_ph}"),
+                    vec![lo.clone(), hi.clone()],
+                )
+            }
+
+            Expr::NotBetween(col, lo, hi) => {
+                let lo_ph = if ph == '?' {
+                    "?".into()
+                } else {
+                    format!("${offset}")
+                };
+                let hi_ph = if ph == '?' {
+                    "?".into()
+                } else {
+                    format!("${}", offset + 1)
+                };
+                (
+                    format!("{col} NOT BETWEEN {lo_ph} AND {hi_ph}"),
+                    vec![lo.clone(), hi.clone()],
+                )
+            }
+
+            Expr::ColEq(left, right) => (format!("{left} = {right}"), vec![]),
+
+            Expr::AggCmp(agg_sql, op, val) => {
+                let placeholder = if ph == '?' {
+                    "?".into()
+                } else {
+                    format!("${offset}")
+                };
+                (format!("{agg_sql} {op} {placeholder}"), vec![val.clone()])
+            }
+
             Expr::And(l, r) => {
                 let (ls, lp) = l.render(offset, ph);
                 offset += lp.len();
@@ -144,6 +210,8 @@ impl Expr {
                 let (s, p) = inner.render(offset, ph);
                 (format!("NOT ({s})"), p)
             }
+
+            Expr::Raw(sql) => (sql.clone(), vec![]),
         }
     }
 
@@ -207,6 +275,34 @@ mod tests {
         let e = Expr::IsNull("\"posts\".\"deleted_at\"".into());
         let (sql, params) = e.to_sql_pg(1);
         assert_eq!(sql, "\"posts\".\"deleted_at\" IS NULL");
+        assert!(params.is_empty());
+    }
+
+    #[test]
+    fn between_pg() {
+        let e = Expr::Between(
+            "\"users\".\"age\"".into(),
+            SqlValue::Integer(18),
+            SqlValue::Integer(65),
+        );
+        let (sql, params) = e.to_sql_pg(1);
+        assert_eq!(sql, "\"users\".\"age\" BETWEEN $1 AND $2");
+        assert_eq!(params.len(), 2);
+    }
+
+    #[test]
+    fn col_eq_no_params() {
+        let e = Expr::ColEq("\"posts\".\"user_id\"".into(), "\"users\".\"id\"".into());
+        let (sql, params) = e.to_sql_pg(1);
+        assert_eq!(sql, "\"posts\".\"user_id\" = \"users\".\"id\"");
+        assert!(params.is_empty());
+    }
+
+    #[test]
+    fn raw_no_params() {
+        let e = Expr::raw("score > 100");
+        let (sql, params) = e.to_sql_pg(1);
+        assert_eq!(sql, "score > 100");
         assert!(params.is_empty());
     }
 }
