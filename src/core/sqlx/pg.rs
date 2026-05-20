@@ -15,6 +15,8 @@ pub fn bind_value<'q>(
         SqlValue::Float(f) => q.bind(f),
         SqlValue::Bool(b) => q.bind(b),
         SqlValue::Null => q.bind(Option::<String>::None),
+        SqlValue::Json(j) => q.bind(sqlx::types::Json(j)),
+        SqlValue::Uuid(u) => q.bind(u),
     }
 }
 
@@ -31,6 +33,8 @@ where
         SqlValue::Float(f) => q.bind(f),
         SqlValue::Bool(b) => q.bind(b),
         SqlValue::Null => q.bind(Option::<String>::None),
+        SqlValue::Json(j) => q.bind(sqlx::types::Json(j)),
+        SqlValue::Uuid(u) => q.bind(u),
     }
 }
 

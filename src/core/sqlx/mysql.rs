@@ -15,6 +15,9 @@ pub fn bind_value<'q>(
         SqlValue::Float(f) => q.bind(f),
         SqlValue::Bool(b) => q.bind(b),
         SqlValue::Null => q.bind(Option::<String>::None),
+        // MySQL stores JSON natively as text; UUID as CHAR(36).
+        SqlValue::Json(j) => q.bind(j.to_string()),
+        SqlValue::Uuid(u) => q.bind(u.to_string()),
     }
 }
 
@@ -31,6 +34,8 @@ where
         SqlValue::Float(f) => q.bind(f),
         SqlValue::Bool(b) => q.bind(b),
         SqlValue::Null => q.bind(Option::<String>::None),
+        SqlValue::Json(j) => q.bind(j.to_string()),
+        SqlValue::Uuid(u) => q.bind(u.to_string()),
     }
 }
 

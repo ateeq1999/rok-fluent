@@ -15,6 +15,9 @@ pub fn bind_value<'q>(
         SqlValue::Float(f) => q.bind(f),
         SqlValue::Bool(b) => q.bind(b),
         SqlValue::Null => q.bind(Option::<String>::None),
+        // SQLite has no native JSON/UUID types; store as text.
+        SqlValue::Json(j) => q.bind(j.to_string()),
+        SqlValue::Uuid(u) => q.bind(u.to_string()),
     }
 }
 
@@ -31,6 +34,8 @@ where
         SqlValue::Float(f) => q.bind(f),
         SqlValue::Bool(b) => q.bind(b),
         SqlValue::Null => q.bind(Option::<String>::None),
+        SqlValue::Json(j) => q.bind(j.to_string()),
+        SqlValue::Uuid(u) => q.bind(u.to_string()),
     }
 }
 

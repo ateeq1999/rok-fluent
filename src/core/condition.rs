@@ -11,6 +11,10 @@ pub enum SqlValue {
     Float(f64),
     Bool(bool),
     Null,
+    /// A JSON value, bound as `jsonb` on PostgreSQL and as a text blob elsewhere.
+    Json(serde_json::Value),
+    /// A UUID, bound as a native `uuid` on PostgreSQL and as text elsewhere.
+    Uuid(uuid::Uuid),
 }
 
 impl SqlValue {
@@ -21,6 +25,8 @@ impl SqlValue {
             Self::Float(f) => f.to_string(),
             Self::Bool(b) => if *b { "TRUE" } else { "FALSE" }.to_string(),
             Self::Null => "NULL".to_string(),
+            Self::Json(v) => format!("'{}'", v),
+            Self::Uuid(u) => format!("'{u}'"),
         }
     }
 }
@@ -92,6 +98,16 @@ impl<T: Into<SqlValue>> From<Option<T>> for SqlValue {
             Some(v) => v.into(),
             None => Self::Null,
         }
+    }
+}
+impl From<serde_json::Value> for SqlValue {
+    fn from(v: serde_json::Value) -> Self {
+        Self::Json(v)
+    }
+}
+impl From<uuid::Uuid> for SqlValue {
+    fn from(u: uuid::Uuid) -> Self {
+        Self::Uuid(u)
     }
 }
 
