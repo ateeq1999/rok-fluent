@@ -1,10 +1,10 @@
 # rok-fluent
 
-Eloquent-inspired async ORM for Rust. Single crate, multi-database, feature-gated.
+Async ORM for Rust built on SQLx. Single crate, multi-database, two query styles, feature-gated.
 
 ```toml
 [dependencies]
-rok-fluent = { version = "0.4", features = ["postgres", "macros"] }
+rok-fluent = { version = "0.4", features = ["active", "query", "postgres"] }
 ```
 
 ## Quick Links
@@ -13,15 +13,16 @@ rok-fluent = { version = "0.4", features = ["postgres", "macros"] }
 |-------|----------|
 | Install & first query | [Getting Started](getting-started.md) |
 | All feature flags | [Features](features.md) |
-| Module map & design | [Architecture](architecture.md) |
-| Version history | [Changelog](changelog.md) |
+| Typed DSL API | [docs/api/dsl.md](api/dsl.md) |
+| Active Record / ORM API | [docs/api/orm.md](api/orm.md) |
 | Core traits API | [docs/api/core.md](api/core.md) |
-| ORM runtime API | [docs/api/orm.md](api/orm.md) |
 | PostgreSQL | [docs/api/postgres.md](api/postgres.md) |
 | MySQL | [docs/api/mysql.md](api/mysql.md) |
 | SQLite | [docs/api/sqlite.md](api/sqlite.md) |
 | Migrations | [docs/api/migrate.md](api/migrate.md) |
 | Test factories | [docs/api/factory.md](api/factory.md) |
+| Module map & design | [Architecture](architecture.md) |
+| Version history | [Changelog](changelog.md) |
 | Writing migrations | [docs/guides/migrations.md](guides/migrations.md) |
 | Testing with factories | [docs/guides/testing.md](guides/testing.md) |
 | Axum integration | [docs/guides/axum.md](guides/axum.md) |
@@ -32,7 +33,9 @@ rok-fluent = { version = "0.4", features = ["postgres", "macros"] }
 | Feature flag | What it enables | Extra deps |
 |---|---|---|
 | `default` | `macros` | — |
-| `macros` | `#[derive(Model, Resource, Seed)]` | `rok-fluent-macros` |
+| `macros` | `#[derive(Model, Table, Resource, Seed)]`, `query!` | `rok-fluent-macros` |
+| **`active`** | **Active Record style** — `ModelQuery`, `PgModel`, eager loading, morph | — |
+| **`query`** | **Typed DSL** — `db::select().from(users::table).where_(users::id.eq(1))` | — |
 | `postgres` | PostgreSQL executor, pool, transactions | `sqlx/postgres`, `tokio`, `dashmap` |
 | `sqlite` | SQLite executor | `sqlx/sqlite`, `tokio` |
 | `mysql` | MySQL executor | `sqlx/mysql`, `tokio` |
@@ -49,6 +52,29 @@ rok-fluent = { version = "0.4", features = ["postgres", "macros"] }
 | `migrate-mysql` | MySQL migration runner | `migrate` + `mysql` |
 | `full` | Everything above | all |
 
+## Query Styles
+
+### Typed DSL (`query` feature) — SQL-natural, fully type-checked
+
+```rust
+let users: Vec<User> = db::select()
+    .from(users::table)
+    .where_(users::email.like("%@example.com").and(users::id.gt(0_i64)))
+    .order_by(users::name.asc())
+    .limit(25)
+    .fetch_all(&pool).await?;
+```
+
+### Active Record (`active` feature) — model-centric, expressive scopes
+
+```rust
+let users: Vec<User> = User::query()
+    .where_like("email", "%@example.com")
+    .order_by("name")
+    .limit(25)
+    .get().await?;
+```
+
 ## Supported Databases
 
 | Database | Minimum version | Feature flag |
@@ -59,4 +85,4 @@ rok-fluent = { version = "0.4", features = ["postgres", "macros"] }
 
 ## License
 
-MIT OR Apache-2.0
+MIT

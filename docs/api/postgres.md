@@ -16,6 +16,9 @@ pool::set(PgPool::connect("postgres://localhost/mydb").await?);
 // Retrieve it inside async tasks
 let pool: &PgPool = pool::get()?;
 
+// Health check — runs SELECT 1, returns false on connection failure
+let healthy: bool = pool::ping(pool::get()?).await;
+
 // Read-replica pool (feature: replica)
 pool::set_replica(PgPool::connect("postgres://replica/mydb").await?);
 let replica: &PgPool = pool::get_replica().unwrap_or_else(|_| pool::get().unwrap());

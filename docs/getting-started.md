@@ -1,44 +1,125 @@
 # Getting Started
 
+rok-fluent ships two query styles.  You can use one or both:
+
+| Style | Feature flag | Example |
+|---|---|---|
+| **Typed DSL** | `query` | `db::select().from(users::table).where_(users::id.eq(1_i64))` |
+| **Active Record** | `active` | `User::query().where_eq("id", 1_i64).first().await?` |
+
+---
+
 ## Install
 
 Add rok-fluent to `Cargo.toml`. Pick the features you need (see [features.md](features.md)):
 
 ```toml
 [dependencies]
-rok-fluent = { version = "0.4", features = ["postgres", "macros"] }
+# Typed DSL + Active Record + PostgreSQL
+rok-fluent = { version = "0.4", features = ["active", "query", "postgres"] }
 
 [dev-dependencies]
 rok-fluent = { version = "0.4", features = ["factory-postgres", "migrate-postgres"] }
 tokio = { version = "1", features = ["full"] }
 ```
 
-## Define a Model
+---
+
+## Style 1 — Typed DSL (`query` feature)
+
+### Define a Table struct
+
+```rust,no_run
+use rok_fluent::dsl::db;
+
+#[derive(Debug, sqlx::FromRow, rok_fluent::TableDerive)]
+#[table(name = "users")]
+pub struct User {
+    pub id:    i64,
+    pub name:  String,
+    pub email: String,
+}
+// Generates: pub mod users { table, id, name, email }
+```
+
+### Query
+
+```rust,no_run
+// SELECT * FROM "users" WHERE "users"."id" = $1
+let user: Option<User> = db::select()
+    .from(users::table)
+    .where_(users::id.eq(42_i64))
+    .fetch_optional::<User>(&pool).await?;
+
+// Compose expressions
+let users: Vec<User> = db::select()
+    .from(users::table)
+    .where_(users::email.like("%@example.com").and(users::id.gt(0_i64)))
+    .order_by(users::name.asc())
+    .limit(25)
+    .fetch_all::<User>(&pool).await?;
+
+// EXISTS check
+let exists: bool = db::select()
+    .from(users::table)
+    .where_(users::email.eq("alice@example.com"))
+    .exists(&pool).await?;
+```
+
+### Insert
+
+```rust,no_run
+// INSERT + RETURNING *
+let created: User = db::insert_into(users::table)
+    .values([("name", "Alice"), ("email", "alice@example.com")])
+    .returning()
+    .fetch_one::<User>(&pool).await?;
+```
+
+### Update
+
+```rust,no_run
+db::update(users::table)
+    .set("name", "Bob")
+    .where_(users::id.eq(42_i64))
+    .execute(&pool).await?;
+```
+
+### Delete
+
+```rust,no_run
+db::delete_from(users::table)
+    .where_(users::id.eq(42_i64))
+    .execute(&pool).await?;
+```
+
+---
+
+## Style 2 — Active Record (`active` + `postgres` features)
+
+### Define a Model
 
 ```rust,no_run
 use rok_fluent::Model;
-use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Model, sqlx::FromRow)]
-#[rok_orm(table = "users", timestamps, soft_delete)]
+#[derive(Debug, sqlx::FromRow, Model)]
+#[model(table = "users", timestamps, soft_delete)]
 pub struct User {
-    pub id: i64,
-    pub name: String,
-    pub email: String,
-    #[rok_orm(hidden)]
+    pub id:            i64,
+    pub name:          String,
+    pub email:         String,
+    #[model(skip)]
     pub password_hash: String,
-    pub active: bool,
-    // created_at and updated_at added by timestamps
-    // deleted_at added by soft_delete
+    pub active:        bool,
 }
 ```
 
 `#[derive(Model)]` generates:
 - `User::table_name()` → `"users"`
 - `User::primary_key()` → `"id"`
-- `User::columns()` → `["id", "name", "email", "password_hash", "active"]`
+- `User::columns()` → `["id", "name", "email", "active"]`
 
-## Connect
+### Connect
 
 ```rust,no_run
 use sqlx::PgPool;
@@ -47,12 +128,12 @@ use rok_fluent::orm::postgres;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let pool = PgPool::connect("postgres://localhost/mydb").await?;
-    postgres::pool::set(pool);           // store in task-local
+    postgres::pool::set(pool);
     Ok(())
 }
 ```
 
-## Query
+### Query
 
 ```rust,no_run
 use rok_fluent::{Model, query};
@@ -81,7 +162,7 @@ let user = User::find(1_i64).await?;
 let user = User::find_or_fail(1_i64).await?;
 ```
 
-## Insert
+### Insert
 
 ```rust,no_run
 use rok_fluent::orm::postgres::model::PgModel;
@@ -95,7 +176,7 @@ let id = User::insert(&[
 .await?;
 ```
 
-## Update
+### Update
 
 ```rust,no_run
 User::update_where(
@@ -105,7 +186,7 @@ User::update_where(
 .await?;
 ```
 
-## Delete
+### Delete
 
 ```rust,no_run
 // Soft delete (sets deleted_at)
@@ -115,7 +196,7 @@ User::soft_delete_where(&[("id", 42_i64.into())]).await?;
 User::delete_where(&[("id", 42_i64.into())]).await?;
 ```
 
-## Pagination
+### Pagination
 
 ```rust,no_run
 use rok_fluent::orm::pagination::Page;
@@ -129,7 +210,7 @@ println!("{} total, {} pages", page.total, page.last_page);
 for user in page.data { /* … */ }
 ```
 
-## Transactions
+### Transactions
 
 ```rust,no_run
 use rok_fluent::orm::postgres::transaction::Tx;
@@ -141,6 +222,8 @@ let result = Tx::run(|tx| async move {
 })
 .await?;
 ```
+
+---
 
 ## Next Steps
 

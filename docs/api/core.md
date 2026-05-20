@@ -24,7 +24,10 @@ Normally implemented via `#[derive(Model)]`. See [features.md — macros](../fea
 
 ### Derive attributes
 
-**Struct-level (`#[rok_orm(...)]`)**
+Both `#[rok_orm(...)]` and `#[model(...)]` are accepted — they are identical aliases.
+Use whichever reads more naturally to you.
+
+**Struct-level (`#[model(...)]` or `#[rok_orm(...)]`)**
 
 | Attribute | Default | Effect |
 |---|---|---|
@@ -41,19 +44,19 @@ Normally implemented via `#[derive(Model)]`. See [features.md — macros](../fea
 
 **Field-level**
 
-| Attribute | Effect |
-|---|---|
-| `#[rok_orm(primary_key)]` | Mark field as PK |
-| `#[rok_orm(skip)]` | Exclude from `columns()` |
-| `#[rok_orm(column = "col")]` | Override column name |
-| `#[rok_orm(hidden)]` | Exclude from `to_resource()` |
-| `#[rok_orm(index)]` | Register index hint |
-| `#[rok_orm(unique_index)]` | Register unique index hint |
-| `#[cast(json)]` | Serialize/deserialize as JSON |
-| `#[cast(encrypted)]` | Redact in `to_resource()` as `"[ENCRYPTED]"` |
-| `#[cast(enum)]` | Use enum string cast |
-| `#[cast(csv)]` | Use CSV cast |
-| `#[cast(timestamp)]` | Serialize as Unix i64 in `to_resource()` |
+| Attribute | Alias | Effect |
+|---|---|---|
+| `#[rok_orm(primary_key)]` | `#[model(pk)]` | Mark field as PK |
+| `#[rok_orm(skip)]` | `#[model(skip)]` | Exclude from `columns()` |
+| `#[rok_orm(column = "col")]` | `#[model(column = "col")]` | Override column name |
+| `#[rok_orm(hidden)]` | — | Exclude from `to_resource()` |
+| `#[rok_orm(index)]` | — | Register index hint |
+| `#[rok_orm(unique_index)]` | — | Register unique index hint |
+| `#[cast(json)]` | — | Serialize/deserialize as JSON |
+| `#[cast(encrypted)]` | — | Redact in `to_resource()` as `"[ENCRYPTED]"` |
+| `#[cast(enum)]` | — | Use enum string cast |
+| `#[cast(csv)]` | — | Use CSV cast |
+| `#[cast(timestamp)]` | — | Serialize as Unix i64 in `to_resource()` |
 
 ---
 
@@ -121,15 +124,38 @@ User::query()
 
 ## `SqlValue`
 
-Type-erased SQL parameter. Implements `From` for all common types.
+Type-erased SQL parameter. Implements `From` for all common types. Used by both the
+Active Record `QueryBuilder<T>` and the typed DSL `Column<T, V>`.
 
 ```rust,no_run
-let v: SqlValue = "hello".into();
-let v: SqlValue = 42_i64.into();
-let v: SqlValue = true.into();
-let v: SqlValue = uuid::Uuid::new_v4().into();
-let v: SqlValue = serde_json::json!({"key": "value"}).into();
+let v: SqlValue = "hello".into();          // Text
+let v: SqlValue = 42_i64.into();           // Integer
+let v: SqlValue = 3.14_f64.into();         // Float
+let v: SqlValue = true.into();             // Bool
+let v: SqlValue = uuid::Uuid::new_v4().into();               // Uuid
+let v: SqlValue = serde_json::json!({"key": "value"}).into(); // Json
 let v: SqlValue = SqlValue::Null;
+```
+
+### Variant table
+
+| Rust type | `SqlValue` variant | PostgreSQL binding | SQLite / MySQL binding |
+|---|---|---|---|
+| `&str`, `String` | `Text(String)` | `text` | `TEXT` |
+| `i8`, `i16`, `i32`, `i64`, `u32`, `u64` | `Integer(i64)` | `int8` | `INTEGER` |
+| `f32`, `f64` | `Float(f64)` | `float8` | `REAL` |
+| `bool` | `Bool(bool)` | `bool` | `INTEGER 0/1` |
+| `serde_json::Value` | `Json(Value)` | `jsonb` | serialized `TEXT` |
+| `uuid::Uuid` | `Uuid(Uuid)` | `uuid` | `CHAR(36)` TEXT |
+| `None` / explicit | `Null` | `NULL` | `NULL` |
+
+### `Option<T>` coercion
+
+`Option<T>` where `T: Into<SqlValue>` maps `Some(v)` → inner variant and `None` → `Null`:
+
+```rust,no_run
+let v: SqlValue = Some(42_i64).into();  // Integer(42)
+let v: SqlValue = None::<i64>.into();   // Null
 ```
 
 ---

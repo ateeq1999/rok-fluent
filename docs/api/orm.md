@@ -1,7 +1,81 @@
 # API: ORM Runtime (`rok_fluent::orm`)
 
-Always available — no feature flag required for the modules listed below.
-Database-specific sub-modules require their respective feature.
+Core ORM types are always compiled. The Active Record query builder and model-centric
+features require `feature = "active"`. Database-specific sub-modules require their
+respective database feature (`postgres`, `sqlite`, `mysql`).
+
+---
+
+## `ModelQuery<M>` — fluent query builder — feature: `active`
+
+`ModelQuery` is the entry point for Active Record style queries. Obtain one via
+`YourModel::query()`.
+
+```rust,no_run
+use rok_fluent::orm::postgres::model::PgModel;
+
+let users = User::query()
+    .where_eq("active", true)
+    .where_like("email", "%@example.com")
+    .order_by_desc("created_at")
+    .limit(25)
+    .offset(0)
+    .all()
+    .await?;
+```
+
+### Fetch terminals
+
+| Method | Returns | Notes |
+|---|---|---|
+| `.all().await?` | `Result<Vec<M>>` | all matching rows |
+| `.first().await?` | `Result<Option<M>>` | first matching row |
+| `.first_or_fail().await?` | `Result<M>` | `RowNotFound` if empty |
+| `.first_or_default().await?` | `Result<M>` where `M: Default` | zero value if empty |
+| `.first_or_else(|| ...).await?` | `Result<M>` | closure if empty |
+| `.count().await?` | `Result<i64>` | `SELECT COUNT(*)` |
+| `.exists().await?` | `Result<bool>` | `SELECT EXISTS(…)` |
+| `.paginate(page, per).await?` | `Result<Page<M>>` | offset pagination |
+| `.simple_paginate(page, per).await?` | `Result<SimplePage<M>>` | no total count |
+| `.cursor_paginate(col, cursor, per).await?` | `Result<CursorPage<M>>` | stable cursors |
+
+### Filter methods
+
+| Method | SQL |
+|---|---|
+| `.where_eq("col", val)` | `WHERE col = $N` |
+| `.where_ne("col", val)` | `WHERE col != $N` |
+| `.where_gt("col", val)` | `WHERE col > $N` |
+| `.where_gte("col", val)` | `WHERE col >= $N` |
+| `.where_lt("col", val)` | `WHERE col < $N` |
+| `.where_lte("col", val)` | `WHERE col <= $N` |
+| `.where_like("col", "%pat%")` | `WHERE col LIKE $N` |
+| `.where_in("col", vals)` | `WHERE col IN (…)` |
+| `.where_null("col")` | `WHERE col IS NULL` |
+| `.where_not_null("col")` | `WHERE col IS NOT NULL` |
+| `.and_expr(dsl_expr)` | typed DSL `Expr` bridge — requires `query` feature |
+
+### Order / limit
+
+```rust,no_run
+.order_by("name")          // ASC
+.order_by_desc("created_at")
+.limit(25)
+.offset(50)
+```
+
+### DSL bridge (requires `active` + `query`)
+
+```rust,no_run
+use rok_fluent::dsl::db;
+
+let posts = Post::query()
+    .and_expr(posts::user_id.eq(42_i64).and(posts::published.eq(true)))
+    .all()
+    .await?;
+```
+
+---
 
 ## Pagination (`rok_fluent::orm::pagination`)
 

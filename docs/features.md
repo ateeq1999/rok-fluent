@@ -54,6 +54,63 @@ rok-fluent = { version = "0.4", features = ["mysql"] }
 
 ---
 
+## Query Styles
+
+rok-fluent ships two independent query styles. Enable one, both, or neither.
+
+### `active`
+
+Active Record / Eloquent style — high-level model methods, scopes, eager loading,
+morph relationships, and through queries. Requires at least one database backend.
+
+```toml
+rok-fluent = { version = "0.4", features = ["active", "postgres"] }
+```
+
+Provides:
+- `ModelQuery<M>` — fluent query builder on a model: `.where_eq()`, `.order_by()`, `.limit()`, `.get()`, `.first()`, `.count()`, `.paginate()`, `.cursor_paginate()`
+- `PgModel` / `MySqlModel` / `SqliteModel` — CRUD traits: `.create()`, `.update()`, `.delete()`, `.find()`
+- `MorphTo` / `MorphMany` — polymorphic relationships
+- `ThroughQuery` — has-many-through queries
+- `EagerLoadable` trait + `with_has_many`, `with_has_one`, `with_belongs_to` batch loaders
+
+```rust
+// Active Record example
+let users: Vec<User> = User::query()
+    .where_eq("active", true)
+    .order_by_desc("created_at")
+    .limit(25)
+    .get()
+    .await?;
+```
+
+### `query`
+
+Drizzle-inspired typed DSL — compile-time column types, composable `Expr` tree,
+SQL-mirroring syntax. Requires at least one database backend.
+
+```toml
+rok-fluent = { version = "0.4", features = ["query", "postgres"] }
+```
+
+Provides:
+- `db::select()`, `db::insert_into()`, `db::update()`, `db::delete_from()` — entry points
+- `SelectBuilder`, `InsertBuilder`, `UpdateBuilder`, `DeleteBuilder`
+- `Column<T, V>` — typed column reference with `.eq()`, `.ne()`, `.gt()`, `.like()`, `.in_()`, `.is_null()`, `.asc()`, `.desc()`
+- `Expr` — composable boolean tree with `.and()`, `.or()`, `!` (NOT)
+- `#[derive(Table)]` — generates `pub mod <table> { pub const table: …; pub const <col>: Column<…>; … }`
+
+```rust
+// Typed DSL example
+let user: Option<User> = db::select()
+    .from(users::table)
+    .where_(users::id.eq(42_i64))
+    .fetch_optional::<User>(&pool)
+    .await?;
+```
+
+---
+
 ## Macros
 
 ### `macros`
@@ -65,7 +122,11 @@ rok-fluent = { version = "0.4", features = ["macros"] }
 ```
 
 Provides:
-- `#[derive(Model)]` — implements `Model` trait; infers table name, primary key, columns
+- `#[derive(Model)]` — implements `Model` trait; infers table name, primary key, columns.
+  Use `#[model(table="...", pk="...", timestamps, soft_delete)]` for customization (or the
+  legacy `#[rok_orm(...)]` namespace — both are supported).
+- `#[derive(Table)]` — generates a typed DSL module for use with `feature = "query"`.
+  Use `#[table(name="...")]` to set the table name; `#[table(skip)]` to exclude fields.
 - `#[derive(Resource)]` — generates `to_resource()` for JSON API serialization
 - `#[derive(Seed)]` — generates `seed(pool, n)` bulk-insert scaffolding
 - `query!(Model, where_eq "col" val, limit 10)` — fluent query shorthand
