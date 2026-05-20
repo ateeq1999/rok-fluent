@@ -1,191 +1,129 @@
-# rok-fluent Consolidation — Task List
+# rok-fluent — Task List
 
-All source moves to `src/`. Feature-flag gating mirrors tokio/serde.
-See `plan.md` for architecture decisions and the full feature-flag taxonomy.
-
----
-
-## Phase 0 — Repo Scaffolding
-
-- [ ] Add `[workspace]` section to root `Cargo.toml` (members: `.`, `rok-fluent-macros`)
-- [ ] Convert root crate from binary (`main.rs`) to library (`lib.rs`); rename `name` to `rok-fluent`
-- [ ] Bump root version to `0.4.0`, set `edition = "2021"`
-- [ ] Create `rok-fluent-macros/` directory (copy of `rok-orm-macros/` with renamed crate)
-- [ ] Update `rok-fluent-macros/Cargo.toml` — name `rok-fluent-macros`, version `0.4.0`
-- [ ] Delete `src/main.rs`; create empty `src/lib.rs`
-- [ ] Create `src/core/`, `src/orm/`, `src/orm/postgres/`, `src/orm/mysql/`, `src/orm/sqlite/`, `src/factory/`, `src/migrate/` directories
-- [ ] Move `rok-orm/tests/` → `tests/` at repo root
+See `plan.md` for architecture decisions, feature-flag taxonomy, and design rationale.
 
 ---
 
-## Phase 1 — Absorb `rok-orm-core` → `src/core/`
+## ✅ Phase 0–12 — Consolidation (COMPLETE as of 2026-05-21)
 
-- [ ] Copy `rok-orm-core/src/condition.rs`   → `src/core/condition.rs`
-- [ ] Copy `rok-orm-core/src/model.rs`        → `src/core/model.rs`
-- [ ] Copy `rok-orm-core/src/query.rs`        → `src/core/query.rs`
-- [ ] Copy `rok-orm-core/src/replica.rs`      → `src/core/replica.rs`
-- [ ] Copy `rok-orm-core/src/schema_cache.rs` → `src/core/schema_cache.rs`
-- [ ] Copy `rok-orm-core/src/tenant.rs`       → `src/core/tenant.rs`
-- [ ] Create `src/core/sqlx/` directory
-- [ ] Copy `rok-orm-core/src/sqlx_pg.rs`      → `src/core/sqlx/pg.rs`
-- [ ] Copy `rok-orm-core/src/sqlx_sqlite.rs`  → `src/core/sqlx/sqlite.rs`
-- [ ] Copy `rok-orm-core/src/sqlx_mysql.rs`   → `src/core/sqlx/mysql.rs`
-- [ ] Write `src/core/sqlx/mod.rs` — re-export each backend under its feature gate:
-  - `#[cfg(feature = "postgres")]`: `pub mod pg`
-  - `#[cfg(feature = "sqlite")]`: `pub mod sqlite`
-  - `#[cfg(feature = "mysql")]`: `pub mod mysql`
-- [ ] Write `src/core/mod.rs` with correct `#[cfg(feature)]` gates:
-  - Always: `condition`, `model`, `query`, `schema_cache`
-  - `#[cfg(feature = "replica")]`: `replica`
-  - `#[cfg(feature = "tenant")]`: `tenant`
-  - Any sqlx feature active: `pub mod sqlx` (use `#[cfg(any(feature="postgres", ...))]`)
-- [ ] Replace all `crate::` paths in core files (were `rok_orm_core::`) with new `crate::core::` paths
+All five original crates (`rok-orm`, `rok-orm-core`, `rok-orm-macros`, `rok-orm-factory`,
+`rok-orm-migrate`) have been absorbed into `src/`. Old crate directories deleted.
+Feature-matrix spot-check passes for all feature combinations.
 
 ---
 
-## Phase 2 — Absorb `rok-orm` (database-agnostic files) → `src/orm/`
+## Phase 13 — Tombstone Releases (deferred — publish after v0.4.0 stabilises)
 
-- [ ] Copy `rok-orm/src/casts.rs`       → `src/orm/casts.rs`
-- [ ] Copy `rok-orm/src/collection.rs`  → `src/orm/collection.rs`
-- [ ] Copy `rok-orm/src/eager.rs`       → `src/orm/eager.rs`
-- [ ] Copy `rok-orm/src/hooks.rs`       → `src/orm/hooks.rs`
-- [ ] Copy `rok-orm/src/model_query.rs` → `src/orm/model_query.rs`
-- [ ] Copy `rok-orm/src/morph.rs`       → `src/orm/morph.rs`
-- [ ] Copy `rok-orm/src/n1.rs`          → `src/orm/n1.rs`
-- [ ] Copy `rok-orm/src/pagination.rs`  → `src/orm/pagination.rs`
-- [ ] Copy `rok-orm/src/resource.rs`    → `src/orm/resource.rs`
-- [ ] Copy `rok-orm/src/scopes.rs`      → `src/orm/scopes.rs`
-- [ ] Copy `rok-orm/src/through.rs`     → `src/orm/through.rs`
-- [ ] Copy `rok-orm/src/orm_layer.rs`   → `src/orm/orm_layer.rs`  (axum-gated)
-- [ ] Write `src/orm/mod.rs` with correct `#[cfg(feature)]` gates
+- [ ] Publish `rok-orm@0.3.99` with `deprecated = true` + `rok-fluent` migration note
+- [ ] Publish tombstones for `rok-orm-core`, `rok-orm-factory`, `rok-orm-migrate`
 
 ---
 
-## Phase 3 — Absorb `rok-orm` (postgres) → `src/orm/postgres/`
+## Phase 14 — Docs & README (in progress)
 
-- [ ] Copy `rok-orm/src/executor.rs`    → `src/orm/postgres/executor.rs`
-- [ ] Copy `rok-orm/src/pg_model.rs`    → `src/orm/postgres/model.rs`
-- [ ] Copy `rok-orm/src/pool.rs`        → `src/orm/postgres/pool.rs`
-- [ ] Copy `rok-orm/src/query_log.rs`   → `src/orm/postgres/query_log.rs`
-- [ ] Copy `rok-orm/src/transaction.rs` → `src/orm/postgres/transaction.rs`
-- [ ] Copy `rok-orm/src/pivot_query.rs` → `src/orm/postgres/pivot_query.rs`
-- [ ] Write `src/orm/postgres/mod.rs`
-
----
-
-## Phase 4 — Absorb `rok-orm` (mysql + sqlite) → `src/orm/mysql/` and `src/orm/sqlite/`
-
-- [ ] Copy `rok-orm/src/mysql_executor.rs` → `src/orm/mysql/executor.rs`
-- [ ] Copy `rok-orm/src/mysql_model.rs`    → `src/orm/mysql/model.rs`
-- [ ] Write `src/orm/mysql/mod.rs`
-- [ ] Copy `rok-orm/src/sqlite_executor.rs` → `src/orm/sqlite/executor.rs`
-- [ ] Copy `rok-orm/src/sqlite_model.rs`    → `src/orm/sqlite/model.rs`
-- [ ] Write `src/orm/sqlite/mod.rs`
-
----
-
-## Phase 5 — Absorb `rok-orm-factory` → `src/factory/`
-
-- [ ] Copy `rok-orm-factory/src/lib.rs`   → `src/factory/mod.rs`
-- [ ] Copy `rok-orm-factory/src/faker.rs` → `src/factory/faker.rs`
-- [ ] Fix `crate::` → `crate::factory::` path references
-- [ ] Gate all of `src/factory/` behind `#[cfg(feature = "factory")]`
-
----
-
-## Phase 6 — Absorb `rok-orm-migrate` → `src/migrate/`
-
-- [ ] Copy `rok-orm-migrate/src/lib.rs`        → `src/migrate/mod.rs`
-- [ ] Copy `rok-orm-migrate/src/migration.rs`  → `src/migrate/migration.rs`
-- [ ] Copy `rok-orm-migrate/src/runner.rs`     → `src/migrate/runner.rs`
-- [ ] Copy `rok-orm-migrate/src/schema.rs`     → `src/migrate/schema.rs`
-- [ ] Copy `rok-orm-migrate/src/source.rs`     → `src/migrate/source.rs`
-- [ ] Copy `rok-orm-migrate/src/table.rs`      → `src/migrate/table.rs`
-- [ ] Fix `crate::` → `crate::migrate::` path references
-- [ ] Gate all of `src/migrate/` behind `#[cfg(feature = "migrate")]`
-- [ ] Gate `runner.rs` postgres/sqlite/mysql paths with matching DB feature flags
-
----
-
-## Phase 7 — Rename `rok-orm-macros` → `rok-fluent-macros` and migrate `query!`
-
-- [ ] Rename crate directory `rok-orm-macros/` → `rok-fluent-macros/`
-- [ ] Update `rok-fluent-macros/Cargo.toml`:
-  - `name = "rok-fluent-macros"`
-  - `version = "0.4.0"`
-  - Remove any path dependency on `rok-orm-core`; replace with paths into `src/core/` via `rok-fluent`
-- [ ] Remove `query!` proc-macro from `rok-fluent-macros/src/lib.rs` (move it out)
-- [ ] Write `src/macros.rs` in `rok-fluent` — implement `query!` as `macro_rules!` (pure token
-  substitution, no struct introspection needed; always available, no feature gate)
-- [ ] Update macro code: replace any `rok_orm_core::` references with `rok_fluent::core::` (or inline the needed types)
-- [ ] Add `rok-fluent-macros` as optional dep in root `Cargo.toml` under `macros` feature
-- [ ] Expose `query!` from `src/lib.rs` via `#[macro_export]` (always on) and remove it from the `macros` feature re-export
-
----
-
-## Phase 8 — Wire up `src/lib.rs`
-
-- [ ] Write top-level re-exports with `#[cfg(feature)]` guards (see plan.md `src/lib.rs` section)
-- [ ] Ensure `pub use crate::core::{Model, QueryBuilder, Dialect, ...}` is always on
-- [ ] Ensure `pub use rok_fluent_macros::{Model, Resource, Seed, query}` is behind `macros`
-- [ ] Add `#[cfg(docsrs)]` all-features hint in doc comment for docs.rs
-
----
-
-## Phase 9 — Cargo.toml
-
-- [ ] Replace root `Cargo.toml` with the consolidated manifest (see plan.md Cargo.toml Design section)
-- [ ] Verify all `[dependencies]` use `optional = true` where appropriate
-- [ ] Add `[dev-dependencies]` (tokio full, any test helpers)
-- [ ] Add `[package.metadata.docs.rs]` with `all-features = true`
-
----
-
-## Phase 10 — Fix Imports & Compile
-
-- [ ] Fix all internal `use rok_orm_core::` → `use crate::core::`
-- [ ] Fix all internal `use rok_orm::` → `use crate::orm::`
-- [ ] Run `cargo check --no-default-features` — must pass
-- [ ] Run `cargo check --features postgres` — must pass
-- [ ] Run `cargo check --features sqlite` — must pass
-- [ ] Run `cargo check --features mysql` — must pass
-- [ ] Run `cargo check --features full` — must pass
-- [ ] Run `cargo check --features "migrate-postgres,factory-postgres,axum,tracing,metrics,tenant"` — must pass
-
----
-
-## Phase 11 — Tests
-
-- [ ] Move `rok-orm/tests/integration.rs`    → `tests/integration.rs`
-- [ ] Move `rok-orm/tests/pg_integration.rs` → `tests/pg_integration.rs`
-- [ ] Update integration test imports from `rok_orm::` → `rok_fluent::`
-- [ ] Run `cargo test --features postgres` (requires live DB or CI fixture)
-
----
-
-## Phase 12 — Cleanup Old Crates
-
-- [ ] Delete `rok-orm/` directory
-- [ ] Delete `rok-orm-core/` directory
-- [ ] Delete `rok-orm-macros/` directory
-- [ ] Delete `rok-orm-factory/` directory
-- [ ] Delete `rok-orm-migrate/` directory
-- [ ] Update `.gitignore` if it referenced any of the above paths
-
----
-
-## Phase 13 — Tombstone Releases (optional, for crates.io users)
-
-- [ ] Publish `rok-orm@0.3.99` with `[package] deprecated = true` and a `rok-fluent` re-export shim
-- [ ] Publish `rok-orm-core@0.3.99` tombstone
-- [ ] Publish `rok-orm-factory@0.3.99` tombstone
-- [ ] Publish `rok-orm-migrate@0.3.99` tombstone
-- [ ] Publish `rok-fluent@0.4.0` as the canonical release
-
----
-
-## Phase 14 — Docs & README
-
-- [ ] Update `README.md` at repo root: new crate name, feature table, migration guide
-- [ ] Delete per-crate `README.md` files (or convert to `//!` doc comments in `lib.rs`)
+- [ ] Write `README.md` at repo root: crate name, feature table, quick-start, migration guide
 - [ ] Verify `cargo doc --features full --open` renders cleanly
+- [ ] Update `docs/changelog.md` with v0.4.0 entry
+
+---
+
+## Phase 15 — Feature Flag Modernisation + `active` Style Gate
+
+**Goal:** make the Active Record style opt-in via `active` feature; scaffold the `query`
+(Drizzle-style typed DSL) behind its own flag.
+
+- [x] Add `active` feature to `Cargo.toml` (gates `PgModel`, `MysqlModel`, `SqliteModel`,
+      `ModelQuery`, `PivotQuery`, `MorphTo*`, `ThroughQuery`)
+- [x] Add `query` feature to `Cargo.toml` (new Drizzle-style DSL, see Phase 17)
+- [x] Update `full` bundle to include `active` + `query`
+- [x] Gate `src/orm/model_query.rs`, `src/orm/morph.rs`, `src/orm/through.rs`,
+      `src/orm/postgres/model.rs`, `src/orm/postgres/pivot_query.rs`,
+      `src/orm/mysql/model.rs`, `src/orm/sqlite/model.rs`
+      behind `feature = "active"` (in addition to their backend feature)
+- [x] Update `src/lib.rs` re-exports to use `active` gate where appropriate
+- [x] Verify all feature-matrix checks pass
+
+---
+
+## Phase 16 — `#[derive(Model)]` Auto-impl
+
+**Goal:** zero-boilerplate Model derivation — no more manual `table_name`, `columns`, `pk`.
+
+- [ ] Extend `rok-fluent-macros` `Model` derive to auto-generate:
+  - `table_name()` → snake_case pluralised struct name (e.g. `User` → `"users"`)
+  - `columns()` → `&["field1", "field2", ...]` from all non-skipped fields
+  - `primary_key()` → `"id"` by default, overridable via `#[model(pk = "...")]`
+  - `pk_value()` → reads the pk field via `serde_json::to_value`
+- [ ] Support attributes: `#[model(table = "...")]`, `#[model(pk = "...")]`, `#[model(skip)]`
+- [ ] Add `#[model(timestamps)]` — marks `created_at`/`updated_at` for `touch()` support
+- [ ] Update `src/core/model.rs` to document which methods are auto-derived
+- [ ] Add doc examples showing zero-boilerplate derivation
+- [ ] Run full test suite
+
+---
+
+## Phase 17 — `query` DSL (Drizzle-style typed query builder)
+
+**Goal:** typed, composable SQL — `db::select().from(users::table).where_(users::id.eq(1))`.
+
+### 17a — Core types (`src/dsl/`)
+- [ ] `src/dsl/mod.rs` — public re-exports, gated behind `feature = "query"`
+- [ ] `src/dsl/column.rs` — `Column<Table, Value>` typed column reference
+  - `.eq(v)`, `.ne(v)`, `.gt(v)`, `.lt(v)`, `.gte(v)`, `.lte(v)`
+  - `.like(s)`, `.in_(vec)`, `.is_null()`, `.is_not_null()`
+  - `.asc()`, `.desc()` → `OrderExpr`
+- [ ] `src/dsl/table.rs` — `Table` trait: `table_name()`, `all_columns()`
+- [ ] `src/dsl/expr.rs` — `Expr` enum: `Col(Column)`, `Lit(SqlValue)`, `And`, `Or`, `Not`
+- [ ] `src/dsl/select.rs` — `SelectBuilder` with fluent API
+- [ ] `src/dsl/insert.rs` — `InsertBuilder` with `.values(row)` + `.returning()`
+- [ ] `src/dsl/update.rs` — `UpdateBuilder` with `.set(col.eq(v)).where_(expr)`
+- [ ] `src/dsl/delete.rs` — `DeleteBuilder` with `.where_(expr)`
+
+### 17b — Entry-point functions (`src/dsl/db.rs`)
+- [ ] `db::select()` → `SelectBuilder`
+- [ ] `db::insert_into(table)` → `InsertBuilder`
+- [ ] `db::update(table)` → `UpdateBuilder`
+- [ ] `db::delete_from(table)` → `DeleteBuilder`
+
+### 17c — `#[derive(Table)]` macro
+- [ ] Add `Table` derive to `rok-fluent-macros`
+- [ ] Generates `mod <table_name> { pub struct table; pub static id: Column<...>; ... }`
+- [ ] Each column field generates a `Column<T, FieldType>` constant
+- [ ] Table struct implements `Table` trait
+
+### 17d — PostgreSQL executor integration
+- [ ] `SelectBuilder::fetch_all(&pool)`, `.fetch_one(&pool)`, `.fetch_optional(&pool)`
+- [ ] `InsertBuilder::execute(&pool)`, `.returning().fetch_one(&pool)`
+- [ ] `UpdateBuilder::execute(&pool)`
+- [ ] `DeleteBuilder::execute(&pool)`
+
+---
+
+## Phase 18 — DX Improvements (both styles)
+
+- [ ] `exists()` terminal on `ModelQuery` / `SelectBuilder` returning `bool`
+- [ ] `first_or_default()` / `first_or_else(|| ...)` on query terminals
+- [ ] Cursor-based pagination: `paginate_cursor(after: Option<Cursor>, limit: u64)`
+- [ ] `QueryEvent` hook: `on_query(fn(sql, params, duration_ms, table_name))`
+- [ ] `EXPLAIN` helper: `query.explain(&pool)` → `String`
+- [ ] `Pool::ping(&pool) -> bool` health-check
+- [ ] Named pool registry: `Pool::named("read_replica")`
+
+---
+
+## Phase 19 — `SqlValue` Completeness
+
+- [ ] Add `SqlValue::Array(Vec<SqlValue>)` for `ANY($1)` style queries
+- [ ] Add `SqlValue::Json(serde_json::Value)` (distinct from `Text`)
+- [ ] Add `SqlValue::Uuid(uuid::Uuid)` (distinct from `Text`)
+- [ ] Update all bind helpers in `src/core/sqlx/pg.rs`, `sqlite.rs`, `mysql.rs`
+
+---
+
+## Phase 20 — `rok db` CLI binary (optional convenience tool)
+
+- [ ] Add `[[bin]]` target or separate `rok-fluent-cli` crate
+- [ ] `rok db migrate` → `MigrationRunner::run()`
+- [ ] `rok db rollback` → `MigrationRunner::rollback()`
+- [ ] `rok db status` → `MigrationRunner::status()`
+- [ ] `rok db make <name>` → scaffold a timestamped migration file

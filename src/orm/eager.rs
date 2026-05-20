@@ -40,12 +40,12 @@
 
 use std::collections::HashMap;
 
-#[cfg(feature = "postgres")]
+#[cfg(all(feature = "active", feature = "postgres"))]
 use std::collections::HashSet;
 
-#[cfg(feature = "postgres")]
+#[cfg(all(feature = "active", feature = "postgres"))]
 use crate::core::condition::SqlValue;
-#[cfg(feature = "postgres")]
+#[cfg(all(feature = "active", feature = "postgres"))]
 use crate::core::model::Model;
 
 // ── Result types ──────────────────────────────────────────────────────────────
@@ -141,7 +141,7 @@ where
 // ── Batch loaders ─────────────────────────────────────────────────────────────
 
 /// Batch-load has-many children for a collection of parents in a single `IN` query.
-#[cfg(feature = "postgres")]
+#[cfg(all(feature = "active", feature = "postgres"))]
 pub async fn with_has_many<P, C, K>(
     parents: Vec<P>,
     fk_col: &str,
@@ -165,7 +165,7 @@ where
 }
 
 /// Batch-load has-one children for a collection of parents in a single `IN` query.
-#[cfg(feature = "postgres")]
+#[cfg(all(feature = "active", feature = "postgres"))]
 pub async fn with_has_one<P, C, K>(
     parents: Vec<P>,
     fk_col: &str,
@@ -191,7 +191,7 @@ where
 /// Batch-load belongs-to parents for a collection of child models in a single `IN` query.
 ///
 /// Returns `(child, Option<parent>)` pairs.
-#[cfg(feature = "postgres")]
+#[cfg(all(feature = "active", feature = "postgres"))]
 pub async fn with_belongs_to<C, P, K>(
     children: Vec<C>,
     parent_pk_col: &str,
@@ -245,7 +245,7 @@ where
 ///
 /// Implement this on a model that has optional fields to hold loaded relations.
 /// Then use [`eager_get`] to load relations by name after the main query.
-#[cfg(feature = "postgres")]
+#[cfg(all(feature = "active", feature = "postgres"))]
 pub trait EagerLoadable: Sized + Send + Sync + 'static {
     /// Load the named relation into the given parent models.
     fn load_eager(
@@ -255,7 +255,7 @@ pub trait EagerLoadable: Sized + Send + Sync + 'static {
 }
 
 /// Fetch rows and eagerly load the given relations via [`EagerLoadable`].
-#[cfg(feature = "postgres")]
+#[cfg(all(feature = "active", feature = "postgres"))]
 pub async fn eager_get<M>(
     query: crate::orm::model_query::ModelQuery<M>,
     relations: &[&str],
@@ -279,7 +279,7 @@ where
 // ── Lazy eager loading ────────────────────────────────────────────────────────
 
 /// Extension trait that adds `.load("relation")` to `Vec<M>` after an initial query.
-#[cfg(feature = "postgres")]
+#[cfg(all(feature = "active", feature = "postgres"))]
 pub trait LazyLoadable: Sized {
     /// Load the named relation into this collection.
     fn load(
@@ -288,7 +288,7 @@ pub trait LazyLoadable: Sized {
     ) -> impl std::future::Future<Output = Result<Self, sqlx::Error>> + Send;
 }
 
-#[cfg(feature = "postgres")]
+#[cfg(all(feature = "active", feature = "postgres"))]
 impl<M> LazyLoadable for Vec<M>
 where
     M: EagerLoadable
@@ -313,13 +313,13 @@ where
 ///
 /// Chain `.with()` calls to add more relations, then call `.get()` to execute.
 /// The model `M` must implement [`EagerLoadable`].
-#[cfg(feature = "postgres")]
+#[cfg(all(feature = "active", feature = "postgres"))]
 pub struct EagerModelQuery<M> {
     pub(crate) query: crate::orm::model_query::ModelQuery<M>,
     pub(crate) relations: Vec<String>,
 }
 
-#[cfg(feature = "postgres")]
+#[cfg(all(feature = "active", feature = "postgres"))]
 impl<M> EagerModelQuery<M>
 where
     M: EagerLoadable

@@ -1,3 +1,5 @@
+//! ORM runtime — Active Record style and supporting utilities.
+
 pub mod casts;
 pub mod collection;
 pub mod eager;
@@ -7,13 +9,15 @@ pub mod pagination;
 pub mod resource;
 pub mod scopes;
 
-#[cfg(feature = "postgres")]
+// Active Record style: fluent model queries, morphic relations, pivot queries.
+// Requires both `active` and a database backend.
+#[cfg(all(feature = "active", feature = "postgres"))]
 pub mod model_query;
 
-#[cfg(feature = "postgres")]
+#[cfg(all(feature = "active", feature = "postgres"))]
 pub mod morph;
 
-#[cfg(feature = "postgres")]
+#[cfg(all(feature = "active", feature = "postgres"))]
 pub mod through;
 
 #[cfg(feature = "axum")]

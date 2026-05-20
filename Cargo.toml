@@ -57,7 +57,17 @@ default = ["macros"]
 # Proc-macro derive support
 macros = ["dep:rok-fluent-macros"]
 
-# Database backends
+# ── Query styles ──────────────────────────────────────────────────────────────
+
+# Active Record / Eloquent style — PgModel, MysqlModel, SqliteModel, ModelQuery,
+# PivotQuery, MorphTo*, ThroughQuery.  Requires at least one database backend.
+active = []
+
+# Drizzle-style typed query DSL — db::select().from(users::table).where_(...).
+# Requires at least one database backend.
+query = []
+
+# ── Database backends ─────────────────────────────────────────────────────────
 postgres = [
     "dep:sqlx", "sqlx/postgres", "sqlx/runtime-tokio-native-tls",
     "dep:tokio", "tokio/rt",
@@ -97,7 +107,8 @@ migrate-mysql    = ["migrate", "mysql"]
 
 # Convenience bundle
 full = [
-    "macros", "postgres", "axum", "tracing", "metrics",
+    "macros", "active", "query",
+    "postgres", "axum", "tracing", "metrics",
     "tenant", "replica", "factory-postgres", "migrate-postgres",
 ]
 
