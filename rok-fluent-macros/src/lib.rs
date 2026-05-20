@@ -3,6 +3,7 @@
 //! | Macro | Kind | Description |
 //! |---|---|---|
 //! | `#[derive(Model)]` | derive | Implement the `Model` trait for a struct |
+//! | `#[derive(Table)]` | derive | Generate a typed DSL module (requires `query` feature) |
 //! | `#[derive(Resource)]` | derive | Generate `to_resource()` for API serialization |
 //! | `#[derive(Seed)]` | derive | Generate `seed(pool, n)` scaffolding |
 //! | `query!` | function-like | Shorthand for building a `QueryBuilder` |
@@ -862,4 +863,166 @@ pub fn derive_seed(input: TokenStream) -> TokenStream {
     };
 
     expanded.into()
+}
+
+// ── #[derive(Table)] ──────────────────────────────────────────────────────────
+
+/// Generate a typed DSL companion module for use with `feature = "query"`.
+///
+/// ```rust,ignore
+/// use rok_fluent::dsl::db;
+///
+/// #[derive(Debug, Table, sqlx::FromRow)]
+/// #[table(name = "users")]
+/// pub struct User {
+///     pub id:    i64,
+///     pub name:  String,
+///     pub email: String,
+/// }
+///
+/// // Generated:
+/// // pub mod users {
+/// //     pub const table: TableMarker = TableMarker;
+/// //     pub const id:    Column<User, i64>    = Column::new("users", "id");
+/// //     pub const name:  Column<User, String> = Column::new("users", "name");
+/// //     pub const email: Column<User, String> = Column::new("users", "email");
+/// // }
+///
+/// let q = db::select()
+///     .from(users::table)
+///     .where_(users::id.eq(42_i64));
+/// ```
+#[proc_macro_derive(Table, attributes(table))]
+pub fn derive_table(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    expand_table(input).unwrap_or_else(|e| e.to_compile_error().into())
+}
+
+fn expand_table(input: DeriveInput) -> syn::Result<TokenStream> {
+    let struct_name = &input.ident;
+
+    let mut custom_table: Option<String> = None;
+
+    for attr in &input.attrs {
+        if !attr.path().is_ident("table") {
+            continue;
+        }
+        attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("name") {
+                let value = meta.value()?;
+                let s: LitStr = value.parse()?;
+                custom_table = Some(s.value());
+                Ok(())
+            } else {
+                Err(meta.error(
+                    "unknown table attribute.\n\
+                     Fix: expected `#[table(name = \"table_name\")]`",
+                ))
+            }
+        })?;
+    }
+
+    let table =
+        custom_table.unwrap_or_else(|| format!("{}s", struct_name.to_string().to_snake_case()));
+
+    let fields = match &input.data {
+        Data::Struct(s) => match &s.fields {
+            Fields::Named(f) => &f.named,
+            _ => {
+                return Err(syn::Error::new(
+                    Span::call_site(),
+                    "rok-fluent: #[derive(Table)] only supports structs with named fields",
+                ))
+            }
+        },
+        _ => {
+            return Err(syn::Error::new(
+                Span::call_site(),
+                "rok-fluent: #[derive(Table)] only supports structs",
+            ))
+        }
+    };
+
+    let mut col_defs: Vec<(syn::Ident, syn::Type, String)> = Vec::new();
+
+    for field in fields.iter() {
+        let field_ident = match &field.ident {
+            Some(id) => id.clone(),
+            None => continue,
+        };
+
+        let mut skip = false;
+        let mut col_override: Option<String> = None;
+
+        for attr in &field.attrs {
+            if attr.path().is_ident("table") {
+                attr.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("skip") {
+                        skip = true;
+                        Ok(())
+                    } else if meta.path.is_ident("column") {
+                        let value = meta.value()?;
+                        let s: LitStr = value.parse()?;
+                        col_override = Some(s.value());
+                        Ok(())
+                    } else {
+                        Err(meta.error(
+                            "unknown table field attribute.\n\
+                             Fix: expected `#[table(skip)]` or `#[table(column = \"col_name\")]`",
+                        ))
+                    }
+                })?;
+            }
+        }
+
+        if skip {
+            continue;
+        }
+
+        let col_name = col_override.unwrap_or_else(|| field_ident.to_string());
+        col_defs.push((field_ident, field.ty.clone(), col_name));
+    }
+
+    let mod_ident = syn::Ident::new(&table, Span::call_site());
+
+    let col_consts: Vec<proc_macro2::TokenStream> = col_defs
+        .iter()
+        .map(|(field_ident, field_ty, col_name)| {
+            quote! {
+                #[allow(non_upper_case_globals)]
+                pub const #field_ident: ::rok_fluent::dsl::Column<super::#struct_name, #field_ty> =
+                    ::rok_fluent::dsl::Column::new(#table, #col_name);
+            }
+        })
+        .collect();
+
+    let expanded = quote! {
+        /// DSL companion module generated by `#[derive(Table)]`.
+        ///
+        /// Contains a `table` constant and one typed `Column` per field.
+        #[cfg(feature = "query")]
+        #[allow(non_snake_case, dead_code)]
+        pub mod #mod_ident {
+            #[allow(unused_imports)]
+            use super::*;
+
+            /// Marker type implementing [`::rok_fluent::dsl::Table`] for this table.
+            #[derive(Debug, Clone, Copy)]
+            pub struct TableMarker;
+
+            impl ::rok_fluent::dsl::Table for TableMarker {
+                fn table_name() -> &'static str {
+                    #table
+                }
+            }
+
+            #[allow(non_upper_case_globals)]
+            /// Table singleton for use with `db::select().from(users::table)`.
+            pub const table: TableMarker = TableMarker;
+
+            #(#col_consts)*
+        }
+    };
+
+    Ok(expanded.into())
 }

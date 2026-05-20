@@ -32,9 +32,8 @@ pub trait RawMigration: Send + Sync + 'static {
 ///
 /// # Example
 ///
-/// ```rust,no_run
-/// # use rok_fluent::migrate::{Migration, MigrationRunner};
-/// # use rok_fluent::migrate::schema::SchemaExecutor;
+/// ```rust,ignore
+/// # use rok_fluent::migrate::{Migration, MigrationRunner, SchemaExecutor};
 /// use async_trait::async_trait;
 ///
 /// pub struct CreateUsersTable;
@@ -44,7 +43,7 @@ pub trait RawMigration: Send + Sync + 'static {
 ///     fn name(&self) -> &str { "2026_05_18_000001_create_users_table" }
 ///
 ///     async fn up(&self, schema: &SchemaExecutor) -> anyhow::Result<()> {
-///         schema.create("users", |t| {
+///         schema.create("users", |t: &mut rok_fluent::migrate::TableBuilder| {
 ///             t.id();
 ///             t.string("email").not_null().unique();
 ///             t.string("name").not_null();

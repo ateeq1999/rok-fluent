@@ -73,4 +73,4 @@ pub use crate::core::replica;
 // ── Proc-macro derive re-exports ──────────────────────────────────────────────
 
 #[cfg(feature = "macros")]
-pub use rok_fluent_macros::{query, Model as ModelDerive, Resource, Seed};
+pub use rok_fluent_macros::{query, Model as ModelDerive, Resource, Seed, Table as TableDerive};

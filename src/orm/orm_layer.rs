@@ -10,7 +10,7 @@
 //! # use rok_fluent::orm::orm_layer::OrmLayer;
 //! # use axum::Router;
 //! # async fn example(pool: sqlx::PgPool) {
-//! let app = Router::new()
+//! let app: Router = Router::new()
 //!     .layer(OrmLayer::new(pool.clone()));
 //! # }
 //! ```
