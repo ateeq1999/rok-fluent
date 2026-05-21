@@ -149,6 +149,29 @@ pub async fn aggregate<T: Model>(
     executor::aggregate(&pool, builder, agg_expr).await
 }
 
+// ── Pool warming ─────────────────────────────────────────────────────────────
+
+/// Pre-open `n` connections so the pool is ready for immediate burst traffic.
+///
+/// Acquires `n` connections concurrently, holds them momentarily, then releases
+/// them back. Call this once at application startup before serving requests.
+///
+/// ```rust,no_run
+/// # async fn example(pool: sqlx::PgPool) -> Result<(), sqlx::Error> {
+/// rok_fluent::orm::postgres::pool::warm(5, &pool).await?;
+/// # Ok(())
+/// # }
+/// ```
+pub async fn warm(n: u32, pool: &PgPool) -> Result<(), sqlx::Error> {
+    let mut handles = Vec::with_capacity(n as usize);
+    for _ in 0..n {
+        handles.push(pool.acquire());
+    }
+    // Acquire concurrently — connections returned to pool when `_conns` is dropped.
+    let _conns: Vec<_> = futures::future::try_join_all(handles).await?;
+    Ok(())
+}
+
 // ── Pool health ───────────────────────────────────────────────────────────────
 
 /// Return `true` if the pool can execute a lightweight round-trip query.

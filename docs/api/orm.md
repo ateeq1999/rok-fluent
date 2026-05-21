@@ -330,9 +330,12 @@ let page  = svc.search_paginated("alice", &["name", "email"], 1, 25).await?;
 Stateless multi-row operations — pass the pool each call.
 
 ```rust,ignore
-// Bulk insert
+// Bulk insert (multi-row INSERT — up to ~65k params)
 BatchService::<User>::bulk_insert(&rows, &pool).await?;
 BatchService::<User>::bulk_insert_chunked(&rows, 500, &pool).await?;
+
+// COPY FROM STDIN — 10–50× faster than INSERT for large batches
+BatchService::<User>::copy_insert(&rows, &pool).await?;
 
 // Upsert by unique key
 BatchService::<User>::bulk_upsert_by("email", &rows, &pool).await?;

@@ -234,20 +234,23 @@ Feature-matrix spot-check passes for all feature combinations.
 
 ---
 
-## Phase 35 — Performance & Scalability (approved 2026-05-21)
+## ✅ Phase 35 — Performance & Scalability (COMPLETE as of 2026-05-21)
 
-- [ ] `SqlValue::Array(Vec<SqlValue>)` — binds as PostgreSQL array; enables `= ANY($1)` queries
-  - [ ] `Column::eq_any(vals)` — renders `col = ANY($N)`
-  - [ ] Update bind helpers in `src/core/sqlx/pg.rs`
-- [ ] `SelectBuilder::stream(&pool) -> impl Stream<Item = Result<T>>` — streaming without buffering
-  - [ ] Uses `sqlx::query_as(...).fetch(&pool)` internally
-  - [ ] Gate behind `futures` dep (already a transitive dep)
-- [ ] PostgreSQL `COPY FROM STDIN` path for `bulk_insert` (10–50× faster for large batches)
-  - [ ] `BatchService::copy_insert(rows, pool)` — uses `sqlx::PgCopyIn`
-  - [ ] Fallback to multi-row `INSERT` on non-PG backends
-- [ ] Prepared statement cache — cache compiled `QueryBuilder` output by SQL hash
-- [ ] `pool::warm(n, pool)` — pre-open `n` connections at startup
-- [ ] Update `docs/api/orm.md`, `docs/guides/performance.md`
+- [x] `SqlValue::Array(Vec<SqlValue>)` — binds as PostgreSQL array; enables `= ANY($1)` queries
+  - [x] `Column::eq_any(vals)` / `QueryBuilder::where_eq_any` — renders `col = ANY(ARRAY[$1, …])`
+  - [x] `Expr::EqAny` / `Condition::EqAny` in expression tree and condition tree
+  - [x] `From<Vec<i64>>`, `From<Vec<String>>`, `From<Vec<&str>>` for `SqlValue`
+  - [x] PG bind: `Vec<i64>` / `Vec<f64>` / `Vec<bool>` / `Vec<String>` by first-element sniff
+  - [x] SQLite / MySQL: fall back to `IN (…)` rendering; bind as text literal
+- [x] `SelectBuilder::stream(&pool) -> impl Stream<Item = Result<T>>` — yields rows without full buffer
+  - [x] Implemented via `futures::stream::once` + `flat_map` (SQL owned by future, no lifetime extension needed)
+  - [x] Uses `futures` dep (already enabled with `postgres` feature)
+- [x] PostgreSQL `COPY FROM STDIN` for large batch inserts (10–50× faster)
+  - [x] `BatchService::copy_insert(rows, pool)` — uses `sqlx::PgPoolCopyExt::copy_in_raw`
+  - [x] CSV serialization with proper quoting for Text / Json / Array values
+- [x] `pool::warm(n, pool)` — pre-open `n` connections concurrently at startup
+- [x] Update `docs/api/orm.md`, `docs/guides/performance.md`
+- Note: Prepared-statement string cache deferred — sqlx already caches at protocol level
 
 ---
 

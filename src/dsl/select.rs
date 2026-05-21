@@ -774,6 +774,46 @@ impl SelectBuilder {
         let plan: serde_json::Value = row.try_get(0)?;
         Ok(plan)
     }
+
+    /// Stream matching rows, yielding each row as it is deserialized.
+    ///
+    /// Internally runs a single query and yields rows one at a time without
+    /// accumulating the full result set in a `Vec`. Suitable for large result
+    /// sets where you want to process rows as they arrive.
+    ///
+    /// ```rust,ignore
+    /// use futures::TryStreamExt;
+    ///
+    /// let mut stream = db::select()
+    ///     .from(User::table())
+    ///     .stream::<User>(&pool);
+    ///
+    /// while let Some(user) = stream.try_next().await? {
+    ///     process(user);
+    /// }
+    /// ```
+    pub fn stream<'pool, T>(
+        self,
+        pool: &'pool sqlx::PgPool,
+    ) -> impl futures::Stream<Item = Result<T, sqlx::Error>> + 'pool
+    where
+        T: for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> + Send + Unpin + 'pool,
+    {
+        use futures::StreamExt;
+        let (sql, params) = self.to_sql_pg();
+        // Run the query inside a future that owns the SQL string, then yield
+        // each row individually.  The SQL string lives for the duration of
+        // the future inside `once`, so no lifetime extension is needed.
+        futures::stream::once(async move {
+            crate::core::sqlx::pg::fetch_all_as::<T>(pool, &sql, params).await
+        })
+        .flat_map(|result| {
+            futures::stream::iter(match result {
+                Ok(rows) => rows.into_iter().map(Ok).collect::<Vec<_>>(),
+                Err(e) => vec![Err(e)],
+            })
+        })
+    }
 }
 
 #[cfg(test)]

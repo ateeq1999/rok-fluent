@@ -15,6 +15,11 @@ pub enum SqlValue {
     Json(serde_json::Value),
     /// A UUID, bound as a native `uuid` on PostgreSQL and as text elsewhere.
     Uuid(uuid::Uuid),
+    /// A homogeneous array — bound as a PostgreSQL array for `= ANY($N)` queries.
+    ///
+    /// All elements must be the same primitive type. Mixed-type arrays are not
+    /// supported and will fall back to the `Text` representation of each element.
+    Array(Vec<SqlValue>),
 }
 
 impl SqlValue {
@@ -27,6 +32,10 @@ impl SqlValue {
             Self::Null => "NULL".to_string(),
             Self::Json(v) => format!("'{}'", v),
             Self::Uuid(u) => format!("'{u}'"),
+            Self::Array(vals) => {
+                let elems: Vec<String> = vals.iter().map(|v| v.to_sql_literal()).collect();
+                format!("ARRAY[{}]", elems.join(", "))
+            }
         }
     }
 }
@@ -110,6 +119,25 @@ impl From<uuid::Uuid> for SqlValue {
         Self::Uuid(u)
     }
 }
+impl From<Vec<i64>> for SqlValue {
+    fn from(v: Vec<i64>) -> Self {
+        Self::Array(v.into_iter().map(SqlValue::Integer).collect())
+    }
+}
+impl From<Vec<String>> for SqlValue {
+    fn from(v: Vec<String>) -> Self {
+        Self::Array(v.into_iter().map(SqlValue::Text).collect())
+    }
+}
+impl From<Vec<&str>> for SqlValue {
+    fn from(v: Vec<&str>) -> Self {
+        Self::Array(
+            v.into_iter()
+                .map(|s| SqlValue::Text(s.to_owned()))
+                .collect(),
+        )
+    }
+}
 
 /// The logical operator used to join a condition to the preceding clause.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -144,6 +172,8 @@ pub enum Condition {
     IsNotNull(String),
     In(String, Vec<SqlValue>),
     NotIn(String, Vec<SqlValue>),
+    /// `col = ANY($N)` — single array parameter; more efficient for prepared-statement reuse.
+    EqAny(String, Vec<SqlValue>),
     Between(String, SqlValue, SqlValue),
     NotBetween(String, SqlValue, SqlValue),
     Raw(String),
@@ -222,6 +252,20 @@ impl Condition {
                     .collect();
                 (
                     format!("{col} NOT IN ({})", placeholders.join(", ")),
+                    vals.clone(),
+                )
+            }
+            Self::EqAny(col, vals) => {
+                if vals.is_empty() {
+                    return ("1=0".into(), vec![]);
+                }
+                let placeholders: Vec<String> = vals
+                    .iter()
+                    .enumerate()
+                    .map(|(i, _)| format!("${}", offset + i))
+                    .collect();
+                (
+                    format!("{col} = ANY(ARRAY[{}])", placeholders.join(", ")),
                     vals.clone(),
                 )
             }
@@ -339,6 +383,14 @@ impl Condition {
                 let ph = vals.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
                 (format!("{col} NOT IN ({ph})"), vals.clone())
             }
+            // SQLite / MySQL have no native ANY(ARRAY[...]) — fall back to IN.
+            Self::EqAny(col, vals) => {
+                if vals.is_empty() {
+                    return ("1=0".into(), vec![]);
+                }
+                let ph = vals.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+                (format!("{col} IN ({ph})"), vals.clone())
+            }
             Self::Between(col, lo, hi) => (
                 format!("{col} BETWEEN ? AND ?"),
                 vec![lo.clone(), hi.clone()],
@@ -440,6 +492,13 @@ impl Condition {
                 }
                 let lits: Vec<String> = vals.iter().map(|v| v.to_sql_literal()).collect();
                 format!("{col} NOT IN ({})", lits.join(", "))
+            }
+            Self::EqAny(col, vals) => {
+                if vals.is_empty() {
+                    return "1=0".into();
+                }
+                let lits: Vec<String> = vals.iter().map(|v| v.to_sql_literal()).collect();
+                format!("{col} = ANY(ARRAY[{}])", lits.join(", "))
             }
             Self::Between(col, lo, hi) => format!("{col} BETWEEN {lo} AND {hi}"),
             Self::NotBetween(col, lo, hi) => format!("{col} NOT BETWEEN {lo} AND {hi}"),

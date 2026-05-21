@@ -107,6 +107,11 @@ impl<T, V: Into<SqlValue>> Column<T, V> {
         Expr::NotIn(self.qualified(), vals.into_iter().map(Into::into).collect())
     }
 
+    /// `column = ANY(ARRAY[$1, $2, …])` — single array parameter; better prepared-statement reuse than `IN`.
+    pub fn eq_any(self, vals: impl IntoIterator<Item = impl Into<SqlValue>>) -> Expr {
+        Expr::EqAny(self.qualified(), vals.into_iter().map(Into::into).collect())
+    }
+
     /// `column BETWEEN lo AND hi`
     pub fn between(self, lo: impl Into<SqlValue>, hi: impl Into<SqlValue>) -> Expr {
         Expr::Between(self.qualified(), lo.into(), hi.into())

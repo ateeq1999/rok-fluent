@@ -36,6 +36,8 @@ pub enum Expr {
     In(String, Vec<SqlValue>),
     /// `col NOT IN (...)`
     NotIn(String, Vec<SqlValue>),
+    /// `col = ANY(ARRAY[$1, $2, …])` — single array parameter for prepared-statement reuse.
+    EqAny(String, Vec<SqlValue>),
     /// `col IS NULL`
     IsNull(String),
     /// `col IS NOT NULL`
@@ -174,6 +176,27 @@ impl Expr {
                     })
                     .collect();
                 (format!("{col} NOT IN ({})", phs.join(", ")), vals.clone())
+            }
+
+            Expr::EqAny(col, vals) => {
+                if vals.is_empty() {
+                    return ("1=0".into(), vec![]);
+                }
+                let phs: Vec<String> = vals
+                    .iter()
+                    .enumerate()
+                    .map(|(i, _)| {
+                        if ph == '?' {
+                            "?".into()
+                        } else {
+                            format!("${}", offset + i)
+                        }
+                    })
+                    .collect();
+                (
+                    format!("{col} = ANY(ARRAY[{}])", phs.join(", ")),
+                    vals.clone(),
+                )
             }
 
             Expr::IsNull(col) => (format!("{col} IS NULL"), vec![]),

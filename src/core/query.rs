@@ -263,6 +263,14 @@ impl<T> QueryBuilder<T> {
         )
     }
 
+    /// `WHERE col = ANY(ARRAY[$1, $2, …])` — single array parameter; better for prepared-statement reuse.
+    pub fn where_eq_any(self, col: &str, vals: Vec<impl Into<SqlValue>>) -> Self {
+        self.push(
+            JoinOp::And,
+            Condition::EqAny(col.into(), vals.into_iter().map(Into::into).collect()),
+        )
+    }
+
     pub fn where_between(
         self,
         col: &str,
