@@ -63,7 +63,7 @@ impl MigrationRunner {
 
     /// Register a [`MigrationSource`] (embedded SQL or file-based SQL).
     ///
-    /// Each raw migration from the source is wrapped in [`RawMigrationAdapter`]
+    /// Each raw migration from the source is wrapped in `RawMigrationAdapter`
     /// so it can run alongside schema-builder migrations.
     pub fn source(mut self, s: impl MigrationSource + 'static) -> Self {
         for m in s.migrations() {

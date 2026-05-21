@@ -69,7 +69,7 @@ where
         }
     }
 
-    fn into_final_builder(self) -> QueryBuilder<M> {
+    pub(crate) fn into_final_builder(self) -> QueryBuilder<M> {
         let mut b = self.builder;
         if !self.skip_scopes {
             b = crate::orm::scopes::apply_scopes::<M>(b);
@@ -457,7 +457,7 @@ where
     // ── multi-database routing ────────────────────────────────────────────────
 
     /// Route this query to a named database pool registered via
-    /// [`pool::register_named_pool`](crate::orm::postgres::pool::register_named_pool).
+    /// [`pool::register_named_pool`].
     #[must_use]
     pub fn on(mut self, db_name: impl Into<String>) -> Self {
         self.named_db = Some(db_name.into());

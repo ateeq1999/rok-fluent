@@ -1,4 +1,4 @@
-//! Bridge between Active Record [`ModelQuery`] and the typed DSL [`SelectBuilder`].
+//! Bridge between Active Record `ModelQuery` and the typed DSL `SelectBuilder`.
 //!
 //! Enabled when both `active` and `query` features are active.
 

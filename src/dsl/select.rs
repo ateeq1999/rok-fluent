@@ -70,6 +70,41 @@ enum SetOp {
     Except(String),
 }
 
+/// PostgreSQL row-level locking clause.
+///
+/// Used with [`SelectBuilder::lock`] to control concurrent access.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Lock {
+    /// `FOR UPDATE` — block until unlocked, then lock for write
+    ForUpdate,
+    /// `FOR NO KEY UPDATE` — weaker than `FOR UPDATE`, allows concurrent key-locking reads
+    ForNoKeyUpdate,
+    /// `FOR SHARE` — shared lock, allows concurrent shared locks
+    ForShare,
+    /// `FOR KEY SHARE` — weakest, allows concurrent non-key-locking writes
+    ForKeyShare,
+}
+
+impl Lock {
+    fn to_sql(self) -> &'static str {
+        match self {
+            Lock::ForUpdate => "FOR UPDATE",
+            Lock::ForNoKeyUpdate => "FOR NO KEY UPDATE",
+            Lock::ForShare => "FOR SHARE",
+            Lock::ForKeyShare => "FOR KEY SHARE",
+        }
+    }
+}
+
+/// Conflict-resolution strategy when locking a row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LockConflict {
+    /// `… SKIP LOCKED` — skip rows that can't be locked immediately
+    SkipLocked,
+    /// `… NOWAIT` — fail immediately if row is locked
+    NoWait,
+}
+
 #[derive(Debug)]
 #[must_use]
 pub struct SelectBuilder {
@@ -84,6 +119,8 @@ pub struct SelectBuilder {
     limit: Option<u64>,
     offset: Option<u64>,
     distinct: bool,
+    distinct_on: Vec<String>,
+    lock: Option<(Lock, Option<LockConflict>)>,
     ctes: Vec<Cte>,
     set_ops: Vec<SetOp>,
 }
@@ -102,6 +139,8 @@ impl SelectBuilder {
             limit: None,
             offset: None,
             distinct: false,
+            distinct_on: Vec::new(),
+            lock: None,
             ctes: Vec::new(),
             set_ops: Vec::new(),
         }
@@ -190,6 +229,34 @@ impl SelectBuilder {
     /// `SELECT DISTINCT`
     pub fn distinct(mut self) -> Self {
         self.distinct = true;
+        self
+    }
+
+    /// `SELECT DISTINCT ON (col1, col2, …)` — PostgreSQL only.
+    ///
+    /// Implies `distinct`. Each call appends to the ON list.
+    pub fn distinct_on(mut self, cols: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.distinct = true;
+        self.distinct_on
+            .extend(cols.into_iter().map(|c| format!("\"{}\"", c.into())));
+        self
+    }
+
+    /// Apply a PostgreSQL row-level locking clause.
+    ///
+    /// See [`Lock`] for available strengths.
+    pub fn lock(mut self, lock: Lock) -> Self {
+        self.lock = Some((lock, None));
+        self
+    }
+
+    /// Apply a conflict-resolution strategy for the active lock clause.
+    ///
+    /// Must be called after [`lock`](SelectBuilder::lock).
+    pub fn lock_conflict(mut self, conflict: LockConflict) -> Self {
+        if let Some((lock, _)) = self.lock {
+            self.lock = Some((lock, Some(conflict)));
+        }
         self
     }
 
@@ -351,7 +418,15 @@ impl SelectBuilder {
         } else {
             self.columns.join(", ")
         };
-        let distinct = if self.distinct { "DISTINCT " } else { "" };
+        let distinct = if self.distinct {
+            if self.distinct_on.is_empty() {
+                "DISTINCT ".to_string()
+            } else {
+                format!("DISTINCT ON ({}) ", self.distinct_on.join(", "))
+            }
+        } else {
+            String::new()
+        };
         let from = self.build_from_clause();
         let cte_pfx = self.cte_prefix();
         let mut sql = format!("{cte_pfx}SELECT {distinct}{cols} FROM {from}");
@@ -444,6 +519,17 @@ impl SelectBuilder {
         }
         if let Some(n) = self.offset {
             sql.push_str(&format!(" OFFSET {n}"));
+        }
+
+        // Lock clause
+        if let Some((lock, conflict)) = self.lock {
+            sql.push_str(&format!(" {}", lock.to_sql()));
+            if let Some(c) = conflict {
+                match c {
+                    LockConflict::SkipLocked => sql.push_str(" SKIP LOCKED"),
+                    LockConflict::NoWait => sql.push_str(" NOWAIT"),
+                }
+            }
         }
 
         // Set operations

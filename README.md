@@ -1,69 +1,37 @@
 # rok-fluent
 
-[![crates.io](https://img.shields.io/crates/v/rok-fluent.svg)](https://crates.io/crates/rok-fluent)
-[![docs.rs](https://docs.rs/rok-fluent/badge.svg)](https://docs.rs/rok-fluent)
-[![CI](https://github.com/ateeq1999/rok-fluent/actions/workflows/ci.yml/badge.svg)](https://github.com/ateeq1999/rok-fluent/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-
-Async ORM for Rust built on [SQLx](https://github.com/launchbadge/sqlx), supporting **PostgreSQL**, **MySQL**, and **SQLite**.
-
-Two query styles ship side by side — pick one or use both:
-
-| Style | Feature flag | Inspiration |
-|---|---|---|
-| Active Record | `active` | Laravel Eloquent |
-| Typed query DSL | `query` | Drizzle ORM |
-
----
-
-## Installation
+**Eloquent-inspired async ORM for Rust** — PostgreSQL, MySQL, SQLite via SQLx.
 
 ```toml
 [dependencies]
-rok-fluent = { version = "0.4", features = ["postgres"] }
-```
-
-Enable both query styles:
-
-```toml
 rok-fluent = { version = "0.4", features = ["active", "query", "postgres"] }
 ```
 
-Or pull everything in:
+## Features
 
-```toml
-rok-fluent = { version = "0.4", features = ["full"] }
-```
+| Flag | What it enables |
+|------|----------------|
+| `macros` *(default)* | `#[derive(Model, Table, Resource, Seed)]`, `query!` macro |
+| `active` | Active Record — `ModelQuery`, `PgModel`, `CrudService`, scopes, eager loading |
+| `query` | Typed DSL — `db::select().from(table).where_(…)`, JOINs, CTEs, aggregates |
+| `postgres` / `sqlite` / `mysql` | Database backend |
+| `axum` | `OrmLayer` middleware (implies `postgres`) |
+| `tracing` / `metrics` | OpenTelemetry spans / Prometheus counters |
+| `tenant` | Multi-tenancy via Tower layer |
+| `replica` | Read-replica routing strategies |
+| `factory` | Test factories with `Faker` data generator |
+| `migrate` / `migrate-postgres` / `migrate-sqlite` / `migrate-mysql` | Schema migration runner |
+| `cli` | `rok db` CLI — migrate, rollback, status, schema dump |
+| `full` | Everything above |
 
----
+## Quick Start
 
-## Feature flags
-
-| Flag | Description |
-|---|---|
-| `macros` *(default)* | `#[derive(Model)]`, `#[derive(Table)]`, `#[derive(Resource)]`, `#[derive(Seed)]` |
-| `active` | Active Record style — `ModelQuery`, `PgModel`, `MorphTo*`, `ThroughQuery` |
-| `query` | Typed DSL — `db::select().from(users::table).where_(users::id.eq(1))` |
-| `postgres` | PostgreSQL via sqlx |
-| `sqlite` | SQLite via sqlx |
-| `mysql` | MySQL via sqlx |
-| `axum` | Tower middleware for Axum |
-| `tracing` | OpenTelemetry-compatible span instrumentation |
-| `metrics` | Prometheus-style query counters |
-| `tenant` | Task-local multi-tenancy |
-| `replica` | Read-replica routing |
-| `migrate` | Schema migration runner |
-| `factory` | Test factory helpers + `Faker` data generator |
-| `full` | All of the above |
-
----
-
-## Typed DSL style (`query` feature)
+### Typed DSL (`query` feature)
 
 ```rust
 use rok_fluent::dsl::db;
 
-#[derive(Debug, sqlx::FromRow, Table)]
+#[derive(Debug, sqlx::FromRow, rok_fluent::Table)]
 #[table(name = "users")]
 pub struct User {
     pub id:    i64,
@@ -71,148 +39,123 @@ pub struct User {
     pub email: String,
 }
 
-// SELECT * FROM "users" WHERE "users"."id" = $1 LIMIT 1
-let user: Option<User> = db::select()
-    .from(users::table)
-    .where_(users::id.eq(42_i64))
-    .fetch_optional::<User>(&pool)
-    .await?;
+// SELECT … FROM users WHERE email LIKE $1 ORDER BY name ASC LIMIT 25
+let users: Vec<User> = db::select()
+    .from(User::table())
+    .where_(User::EMAIL.like("%@example.com"))
+    .order_by(User::NAME.asc())
+    .limit(25)
+    .fetch_all(&pool).await?;
 
-// INSERT INTO "users" ("name", "email") VALUES ($1, $2) RETURNING *
-let created: User = db::insert_into(users::table)
+// INSERT … RETURNING *
+let user: User = db::insert_into(User::table())
     .values([("name", "Alice"), ("email", "alice@example.com")])
     .returning()
-    .fetch_one::<User>(&pool)
-    .await?;
+    .fetch_one(&pool).await?;
 
-// UPDATE "users" SET "name" = $1 WHERE "users"."id" = $2
-db::update(users::table)
-    .set("name", "Bob")
-    .where_(users::id.eq(42_i64))
-    .execute(&pool)
-    .await?;
+// Upsert — INSERT … ON CONFLICT DO UPDATE
+let user: User = db::insert_into(User::table())
+    .values_typed([(User::EMAIL, "alice@example.com"), (User::NAME, "Alice")])
+    .on_conflict(User::EMAIL).do_update([(User::NAME, "Alice")])
+    .returning()
+    .fetch_one(&pool).await?;
 
-// DELETE FROM "users" WHERE "users"."id" = $1
-db::delete_from(users::table)
-    .where_(users::id.eq(42_i64))
-    .execute(&pool)
-    .await?;
+// Join with typed ON clause
+let rows: Vec<(User, Post)> = db::select()
+    .from(User::table())
+    .inner_join(Post::table(), Post::USER_ID.references(User::ID))
+    .fetch_all(&pool).await?;
+
+// Pagination
+let page: Page<User> = db::select()
+    .from(User::table())
+    .paginate(1, 25, &pool).await?;
 ```
 
-### Composable `WHERE` expressions
-
-```rust
-let expr = users::email.like("%@example.com")
-    .and(users::id.gt(10_i64))
-    .or(!users::name.is_null());
-
-let rows: Vec<User> = db::select()
-    .from(users::table)
-    .where_(expr)
-    .order_by(users::id.desc())
-    .limit(20)
-    .fetch_all::<User>(&pool)
-    .await?;
-```
-
----
-
-## Active Record style (`active` + `postgres` features)
+### Active Record (`active` + `postgres` features)
 
 ```rust
 use rok_fluent::Model;
 
 #[derive(Debug, sqlx::FromRow, Model)]
-#[model(table = "posts", timestamps)]
-pub struct Post {
-    pub id:      i64,
-    pub title:   String,
-    pub user_id: i64,
+#[model(table = "users", timestamps)]
+pub struct User {
+    pub id:    i64,
+    pub name:  String,
+    pub email: String,
+    pub active: bool,
 }
+
+// Fluent query
+let users = User::query()
+    .where_eq("active", true)
+    .order_by_desc("created_at")
+    .limit(20)
+    .all().await?;
 
 // Find by primary key
-let post = Post::query().find(1_i64).await?;
+let user = User::find(42_i64).await?;
 
-// Scoped query
-let recent: Vec<Post> = Post::query()
-    .where_eq("user_id", 42_i64)
-    .order_by_desc("id")
-    .limit(10)
-    .get()
-    .await?;
-
-// Count
-let total: i64 = Post::query().count().await?;
-
-// Eager loading (avoids N+1)
-let posts_with_author = with_belongs_to(
-    recent,
-    "id",
-    |p: &Post| p.user_id,
-    |u: &User| u.id,
-).await?;
+// Paginate
+let page: Page<User> = User::query()
+    .where_eq("active", true)
+    .paginate(1, 25).await?;
 ```
 
----
-
-## Migrations (`migrate` feature)
+### Service Layer (`active` + `postgres`)
 
 ```rust
-use rok_fluent::migrate::{Migration, MigrationRunner, SchemaExecutor};
-use async_trait::async_trait;
+use rok_fluent::services::{CrudService, FilterBuilder, SortBuilder, BatchService};
 
-pub struct CreateUsersTable;
+let crud = CrudService::<User>::new(pool.clone());
 
-#[async_trait]
-impl Migration for CreateUsersTable {
-    fn name(&self) -> &str { "2026_05_18_000001_create_users_table" }
+// CRUD
+let user = crud.find(42).await?;
+let page = crud.paginate(1, 25).await?;
+let created = crud.create(&[("name", "Alice".into()), ("email", "a@b.com".into())]).await?;
+let updated = crud.update(42, &[("name", "Bob".into())]).await?;
+crud.delete(42).await?;
 
-    async fn up(&self, schema: &SchemaExecutor) -> anyhow::Result<()> {
-        schema.create("users", |t| {
-            t.id();
-            t.string("email").not_null().unique();
-            t.string("name").not_null();
-            t.timestamps();
-        }).await
-    }
+// Filtering & sorting
+let results = crud.query()
+    .apply(FilterBuilder::default().eq("active", true))
+    .apply(SortBuilder::default().allow("name", "created_at").then_by("name", "asc"))
+    .paginate(1, 25).await?;
 
-    async fn down(&self, schema: &SchemaExecutor) -> anyhow::Result<()> {
-        schema.drop_table_if_exists("users").await
-    }
-}
-
-MigrationRunner::new(&pool)
-    .migration(CreateUsersTable)
-    .run()
-    .await?;
+// Batch operations
+let batch = BatchService::<User>::new(pool.clone());
+let ids = batch.bulk_insert(&[user1, user2, user3]).await?;
+batch.bulk_upsert_by("email", &[user1, user2]).await?;
 ```
 
----
+## Migration from `rok-orm` 0.3
 
-## `SqlValue` types
+```toml
+# Before (5 crates)
+rok-orm         = { version = "0.3", features = ["postgres", "macros"] }
+rok-orm-core    = { version = "0.3" }
+rok-orm-macros  = { version = "0.3" }
+rok-orm-migrate = { version = "0.3", features = ["postgres"] }
+rok-orm-factory = { version = "0.3", features = ["postgres"] }
 
-| Variant | Rust type | PostgreSQL | SQLite / MySQL |
-|---|---|---|---|
-| `Text(String)` | `String`, `&str` | `TEXT` | `TEXT` |
-| `Integer(i64)` | `i8`–`i64`, `u32`, `u64` | `BIGINT` | `INTEGER` |
-| `Float(f64)` | `f32`, `f64` | `FLOAT8` | `REAL` |
-| `Bool(bool)` | `bool` | `BOOLEAN` | `BOOLEAN` |
-| `Json(Value)` | `serde_json::Value` | `JSONB` | text blob |
-| `Uuid(Uuid)` | `uuid::Uuid` | native `UUID` | `CHAR(36)` |
-| `Null` | `Option<T>` | `NULL` | `NULL` |
-
----
-
-## Health check
-
-```rust
-if rok_fluent::orm::postgres::pool::ping(&pool).await {
-    println!("database is reachable");
-}
+# After (1 crate)
+rok-fluent = { version = "0.4", features = ["postgres", "macros", "migrate-postgres", "factory-postgres"] }
 ```
 
----
+Import path changes:
+- `rok_orm::` → `rok_fluent::`
+- `rok_orm_core::SqlValue` → `rok_fluent::SqlValue`
+- `rok_orm_migrate::MigrationRunner` → `rok_fluent::migrate::MigrationRunner`
+- `#[derive(rok_orm_macros::Model)]` → `#[derive(rok_fluent::Model)]`
+
+## Resources
+
+- [Getting Started](docs/getting-started.md)
+- [Feature Flags](docs/features.md)
+- [API Reference (crates.io)](https://docs.rs/rok-fluent)
+- [Architecture](docs/architecture.md)
+- [Changelog](docs/changelog.md)
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT

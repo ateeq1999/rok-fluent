@@ -10,6 +10,8 @@
 //! | [`BatchService<M>`] | Efficient multi-row operations — bulk insert, update, upsert, delete |
 //! | [`SoftDeleteService<M>`] | Scoped queries for soft-deletable models |
 //! | [`SearchService<M>`] | ILIKE and full-text search across declared columns |
+//! | [`TransactionService`] | Closure-based transactions with savepoints and CRUD |
+//! | [`TxCtx`] | Transaction context obtained from `TransactionService::run` |
 //! | [`AuditService<M>`] | `touch()` and `history()` for timestamped models |
 //!
 //! # Quick start
@@ -34,6 +36,8 @@ pub mod search;
 pub mod soft_delete;
 #[cfg(all(feature = "active", feature = "postgres"))]
 pub mod sort;
+#[cfg(all(feature = "active", feature = "postgres"))]
+pub mod transaction;
 
 #[cfg(all(feature = "active", feature = "postgres"))]
 pub use audit::{AuditEntry, AuditService};
@@ -49,3 +53,5 @@ pub use search::SearchService;
 pub use soft_delete::SoftDeleteService;
 #[cfg(all(feature = "active", feature = "postgres"))]
 pub use sort::SortBuilder;
+#[cfg(all(feature = "active", feature = "postgres"))]
+pub use transaction::{TransactionService, TxCtx};

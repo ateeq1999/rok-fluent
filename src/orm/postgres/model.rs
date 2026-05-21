@@ -1,4 +1,4 @@
-//! [`PgModel`] — ergonomic async CRUD methods for any [`Model`] + [`sqlx::FromRow`] type.
+//! [`PgModel`](crate::orm::postgres::model::PgModel) — ergonomic async CRUD methods for any [`Model`](crate::Model) + [`sqlx::FromRow`] type.
 //!
 //! All methods are provided as defaults; no manual implementation is required.
 //!

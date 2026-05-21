@@ -7,21 +7,17 @@ conventions. Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
-### In progress / approved
+### Remaining
 
-- **Phase 32b** — `SoftDeleteService<M>`, `SearchService<M>`, `AuditService<M>`, `BatchService::bulk_update`
-- **Phase 33** — Active Record ↔ DSL bridge (`ModelQuery::and_expr`, `into_dsl()`)
-- **Phase 34** — DX: `.inspect()`, `.explain()`, `#[table(searchable)]`, `#[table(rename_all)]`
-- **Phase 35** — Performance: `SqlValue::Array`, `stream()`, `COPY FROM STDIN` bulk path
-- **Phase 36** — `rok db` CLI
 - **Phase 37** — `TransactionService`, `LockService`, `SchemaInspector`, window functions, `TypedJson<T>`
-- **Phase 38** — Ecosystem: tombstone releases, MSRV policy, fuzz/bench suite, `QueryLog`
+- **Phase 38** — Ecosystem: crates.io publish, MSRV policy, fuzz/bench suite, `QueryLog`
+- **Phase 14** — README.md, `cargo doc` verification
 
-See [plan.md](../plan.md) and [todo.md](../todo.md) for the full roadmap.
+See [todo.md](../todo.md) for the full task breakdown.
 
 ---
 
-## [0.4.1] — 2026-05-21 (unreleased)
+## [0.4.1] — 2026-05-21
 
 ### Added
 - **OOP primary DSL API** (`#[derive(Table)]`) — `User::table()`, `User::ID`, `User::NAME` SCREAMING_SNAKE_CASE column constants on every `#[derive(Table)]` struct.
@@ -33,6 +29,15 @@ See [plan.md](../plan.md) and [todo.md](../todo.md) for the full roadmap.
 - **Upsert + RETURNING** — `InsertBuilder::on_conflict_do_nothing()`, `on_conflict()`, `do_update_excluded()`, `do_update_values()`, `returning()`, `fetch_one/fetch_all`. `UpdateBuilder::set_col()`, `set_typed()`, `returning()`, `fetch_one/fetch_all`.
 - **`Loaded<T>`** — relationship carrier enum (`NotLoaded` / `Some(T)`) with `Serialize`/`Deserialize`.
 - **Service layer** (`active` + `postgres`) — `CrudService<M>`, `FilterBuilder<M>`, `SortBuilder<M>`, `BatchService<M>` in `rok_fluent::services`.
+- **Remaining services** — `SoftDeleteService<M>`, `SearchService<M>` (ILIKE + full-text), `AuditService<M>`, `BatchService::bulk_update`.
+- **Active Record ↔ DSL bridge** — `ModelQuery::and_expr(expr)`, `or_expr(expr)`, `into_dsl()` — gated behind `active` + `query` features.
+- **DX improvements** — `.inspect()` / `.explain()` / `.explain_json()` on all DSL builders; `#[table(searchable)]` field attribute.
+- **Performance** — `SqlValue::Array` + `Column::eq_any()`; `SelectBuilder::stream()` yielding rows without full buffer; `BatchService::copy_insert()` via PostgreSQL `COPY FROM STDIN` (10–50× faster); `pool::warm()` for pre-opening connections.
+- **`rok db` CLI** — `[[bin]]` target gated behind `cli` feature. Commands: `migrate`, `rollback`, `status`, `make`, `seed`, `schema dump`, `schema diff`.
+- **CI consolidation** — merged `ci.yml` + `publish.yml` into single workflow; uses `Swatinem/rust-cache@v2`.
+
+### Changed
+- `#[derive(Table)]` now generates `table_name()` + `name()` on `impl Table`.
 
 ---
 

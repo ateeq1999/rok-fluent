@@ -1,4 +1,4 @@
-//! [`PivotQuery`] — many-to-many relationship query via a pivot/junction table.
+//! `PivotQuery` — many-to-many relationship query via a pivot/junction table.
 //!
 //! Returned by `belongs_to_many!` macros.  Provides:
 //! - Read operations: `get`, `first`, `count`, `exists`

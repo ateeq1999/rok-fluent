@@ -56,6 +56,6 @@ pub use delete::DeleteBuilder;
 pub use expr::{CaseExpr, Expr};
 pub use insert::InsertBuilder;
 pub use loaded::Loaded;
-pub use select::{Join, JoinKind, SelectBuilder};
+pub use select::{Join, JoinKind, Lock, LockConflict, SelectBuilder};
 pub use table::Table;
 pub use update::UpdateBuilder;

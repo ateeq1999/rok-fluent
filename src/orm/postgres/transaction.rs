@@ -1,7 +1,7 @@
 //! PostgreSQL transaction wrapper.
 //!
-//! [`Tx`] wraps a [`sqlx::Transaction`] and exposes the same ORM operations as
-//! [`executor`], but all run inside a single database transaction.
+//! [`Tx`] wraps a [`sqlx::Transaction`] and exposes the same ORM operations as the
+//! crate's executor, but all run inside a single database transaction.
 //!
 //! ```rust,no_run
 //! # use rok_fluent::orm::postgres::transaction::Tx;
