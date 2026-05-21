@@ -7,8 +7,32 @@ conventions. Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
-Planning Phase 21 (dual `users::table` + `User::table()` API) and Phase 22 (JOIN builder).
-See [plan.md](../plan.md) for the full roadmap.
+### In progress / approved
+
+- **Phase 32b** — `SoftDeleteService<M>`, `SearchService<M>`, `AuditService<M>`, `BatchService::bulk_update`
+- **Phase 33** — Active Record ↔ DSL bridge (`ModelQuery::and_expr`, `into_dsl()`)
+- **Phase 34** — DX: `.inspect()`, `.explain()`, `#[table(searchable)]`, `#[table(rename_all)]`
+- **Phase 35** — Performance: `SqlValue::Array`, `stream()`, `COPY FROM STDIN` bulk path
+- **Phase 36** — `rok db` CLI
+- **Phase 37** — `TransactionService`, `LockService`, `SchemaInspector`, window functions, `TypedJson<T>`
+- **Phase 38** — Ecosystem: tombstone releases, MSRV policy, fuzz/bench suite, `QueryLog`
+
+See [plan.md](../plan.md) and [todo.md](../todo.md) for the full roadmap.
+
+---
+
+## [0.4.1] — 2026-05-21 (unreleased)
+
+### Added
+- **OOP primary DSL API** (`#[derive(Table)]`) — `User::table()`, `User::ID`, `User::NAME` SCREAMING_SNAKE_CASE column constants on every `#[derive(Table)]` struct.
+- **DSL JOIN builder** — `SelectBuilder::inner_join`, `left_join`, `right_join`, `cross_join`. `Column::references()` / `eq_col()` for typed ON clauses.
+- **DSL aggregators** — `Column::count()`, `sum()`, `avg()`, `min()`, `max()`, `count_distinct()`. `SelectBuilder::group_by()`, `having()`. `AggExpr` with HAVING comparison operators.
+- **DSL pagination** — `SelectBuilder::paginate()`, `simple_paginate()`, `cursor_paginate()`, `count()`, `exists()` terminals.
+- **Advanced `Expr`** — `Expr::case()` / `CaseExpr`, `Expr::exists()`, `Expr::not_exists()`, `Expr::InSubquery`, `Expr::NotInSubquery`. Column functions: `lower()`, `upper()`, `length()`, `trim()`, `coalesce()`, `cast_as()`, `date_trunc()`, `extract()` → `FnExpr`.
+- **Subqueries, CTEs, set operations** — `SelectBuilder::from_subquery()`, `with_cte()`, `from_cte()`, `union()`, `union_all()`, `intersect()`, `except()`.
+- **Upsert + RETURNING** — `InsertBuilder::on_conflict_do_nothing()`, `on_conflict()`, `do_update_excluded()`, `do_update_values()`, `returning()`, `fetch_one/fetch_all`. `UpdateBuilder::set_col()`, `set_typed()`, `returning()`, `fetch_one/fetch_all`.
+- **`Loaded<T>`** — relationship carrier enum (`NotLoaded` / `Some(T)`) with `Serialize`/`Deserialize`.
+- **Service layer** (`active` + `postgres`) — `CrudService<M>`, `FilterBuilder<M>`, `SortBuilder<M>`, `BatchService<M>` in `rok_fluent::services`.
 
 ---
 

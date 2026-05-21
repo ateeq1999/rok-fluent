@@ -182,3 +182,117 @@ Feature-matrix spot-check passes for all feature combinations.
   - [x] `bulk_insert()`, `bulk_insert_chunked()`, `bulk_upsert_by()`, `delete_where()`
 - [x] `src/services/mod.rs` — re-exports all four types
 - [x] `src/lib.rs` — `pub mod services` added
+
+---
+
+## Phase 32b — Remaining Service Layer (approved 2026-05-21)
+
+- [ ] `src/services/soft_delete.rs` — `SoftDeleteService<M>`
+  - [ ] `all_active(pool)`, `all_deleted(pool)`, `with_trashed(pool)`
+  - [ ] `soft_delete(id, pool)`, `restore(id, pool)`, `force_delete(id, pool)`, `purge_deleted(pool)`
+- [ ] `src/services/search.rs` — `SearchService<M>`
+  - [ ] PostgreSQL: `to_tsvector` / GIN-index full-text search
+  - [ ] MySQL / SQLite fallback: `col LIKE '%term%' OR …`
+  - [ ] `search(term, pool)` → `Vec<M>`, `search_paginated(term, page, per, pool)` → `Page<M>`
+  - [ ] `#[table(searchable)]` field attribute in `#[derive(Table)]` macro
+- [ ] `src/services/audit.rs` — `AuditService<M>`
+  - [ ] `touch(id, pool)` — `UPDATE SET updated_at = NOW()`
+  - [ ] `history(id, pool)` — reads from `audit_log` table if present
+- [ ] `BatchService::bulk_update(data, ids, pool)` — update rows matching a list of PKs
+- [ ] `CrudService::search(term)` + `search_paginated(term, page, per)` — delegates to `SearchService`
+- [ ] `CrudService::all_with(relations)` + `paginate_with(page, per, relations)` (post Phase 25)
+- [ ] Update `src/services/mod.rs` re-exports
+- [ ] Update `docs/api/orm.md` with all new service types
+
+---
+
+## Phase 33 — Active Record ↔ DSL Bridge (approved 2026-05-21)
+
+- [ ] `ModelQuery::and_expr(expr: Expr)` — inject a typed `Expr` into an Active Record chain
+- [ ] `ModelQuery::or_expr(expr: Expr)` — OR variant
+- [ ] `ModelQuery::into_dsl() -> SelectBuilder` — convert to a DSL `SelectBuilder`
+- [ ] Feature-gate: only available when both `active` + `query` features are enabled
+- [ ] Tests: round-trip AR → DSL produces identical SQL
+- [ ] Update `docs/guides/active-record.md` with bridge examples
+
+---
+
+## Phase 34 — Developer Experience (approved 2026-05-21)
+
+- [ ] `.inspect()` on `SelectBuilder`, `InsertBuilder`, `UpdateBuilder`, `DeleteBuilder`
+  - [ ] Prints rendered SQL + bound params to `stderr` (behind `tracing` feature: emits a span)
+  - [ ] Returns `self` unchanged (builder-chain transparent)
+- [ ] `.explain(&pool) -> Result<String, sqlx::Error>` on `SelectBuilder` (PostgreSQL only)
+- [ ] `.explain_json(&pool) -> Result<serde_json::Value, sqlx::Error>` — structured plan
+- [ ] `#[table(searchable)]` field attribute — marks column for `SearchService` index
+- [ ] `#[table(rename_all = "camelCase|snake_case|PascalCase")]` — rename column constants
+- [ ] Better proc-macro errors — `compile_error!` pointing to the offending `#[table(...)]` attribute
+- [ ] Update `docs/api/core.md`, `docs/guides/debugging.md`
+
+---
+
+## Phase 35 — Performance & Scalability (approved 2026-05-21)
+
+- [ ] `SqlValue::Array(Vec<SqlValue>)` — binds as PostgreSQL array; enables `= ANY($1)` queries
+  - [ ] `Column::eq_any(vals)` — renders `col = ANY($N)`
+  - [ ] Update bind helpers in `src/core/sqlx/pg.rs`
+- [ ] `SelectBuilder::stream(&pool) -> impl Stream<Item = Result<T>>` — streaming without buffering
+  - [ ] Uses `sqlx::query_as(...).fetch(&pool)` internally
+  - [ ] Gate behind `futures` dep (already a transitive dep)
+- [ ] PostgreSQL `COPY FROM STDIN` path for `bulk_insert` (10–50× faster for large batches)
+  - [ ] `BatchService::copy_insert(rows, pool)` — uses `sqlx::PgCopyIn`
+  - [ ] Fallback to multi-row `INSERT` on non-PG backends
+- [ ] Prepared statement cache — cache compiled `QueryBuilder` output by SQL hash
+- [ ] `pool::warm(n, pool)` — pre-open `n` connections at startup
+- [ ] Update `docs/api/orm.md`, `docs/guides/performance.md`
+
+---
+
+## Phase 36 — `rok db` CLI (approved 2026-05-21)
+
+- [ ] Add `cli` feature to `Cargo.toml` (pulls in `clap`)
+- [ ] `[[bin]]` target `rok` in `Cargo.toml` or separate `rok-fluent-cli` crate
+- [ ] `rok db migrate` — runs pending migrations via `MigrationRunner`
+- [ ] `rok db rollback` — rolls back the last migration
+- [ ] `rok db status` — prints applied / pending migration list
+- [ ] `rok db make <name>` — scaffolds a timestamped `YYYYMMDDHHMMSS_<name>.sql` file
+- [ ] `rok db seed` — runs all `#[derive(Seed)]` seeders
+- [ ] `rok db schema dump` — introspects live DB and emits `CREATE TABLE` DDL
+- [ ] `rok db schema diff` — compares live DB to migration history
+- [ ] Update `docs/guides/migrations.md`, `docs/api/migrate.md`
+
+---
+
+## Phase 37 — New Services: Transactions, Locking, Schema Inspection (approved 2026-05-21)
+
+- [ ] `src/services/transaction.rs` — `TransactionService`
+  - [ ] `TransactionService::run(&pool, |tx| async { … })` — closure-based transaction
+  - [ ] `tx.savepoint("name")`, `tx.rollback_to("name")`, `tx.release("name")`
+  - [ ] `tx.create::<M>()`, `tx.update::<M>()`, `tx.delete::<M>()` pool-free CRUD on a `&mut PgTransaction`
+- [ ] `src/services/lock.rs` — `LockService`
+  - [ ] `SelectBuilder::lock(Lock::ForUpdate | ForShare | SkipLocked | NoWait)` — row-level locking
+  - [ ] `LockService::acquire(key, pool)` — PostgreSQL `pg_advisory_lock`
+  - [ ] `LockService::try_acquire(key, pool) -> bool` — non-blocking `pg_try_advisory_lock`
+  - [ ] `LockService::release(key, pool)` — `pg_advisory_unlock`
+- [ ] `src/services/schema_inspector.rs` — `SchemaInspector`
+  - [ ] `SchemaInspector::columns(table, pool)` → `Vec<ColumnInfo>`
+  - [ ] `SchemaInspector::indexes(table, pool)` → `Vec<IndexInfo>`
+  - [ ] `SchemaInspector::foreign_keys(table, pool)` → `Vec<ForeignKeyInfo>`
+  - [ ] Used internally by `rok db schema dump`
+- [ ] `SelectBuilder::distinct_on(cols)` — PostgreSQL `SELECT DISTINCT ON (col, …)`
+- [ ] Window function support: `Column::rank()`, `row_number()`, `lag(n)`, `lead(n)` + `Window` builder
+- [ ] `TypedJson<T>` column wrapper — deserializes `jsonb` directly into a typed struct
+- [ ] Update `docs/api/orm.md`, `docs/guides/transactions.md`, `docs/guides/locking.md`
+
+---
+
+## Phase 38 — Ecosystem & Publish Quality (approved 2026-05-21)
+
+- [ ] publish `rok-fluent`
+- [ ] `docs.rs` feature metadata: `all-features = true` + `rustdoc-args = ["--cfg", "docsrs"]`
+- [ ] MSRV policy: declare `rust-version` in `Cargo.toml`, test against stable - 2 in CI
+- [ ] `cargo-fuzz` targets: SQL rendering correctness for `SelectBuilder`, `InsertBuilder`
+- [ ] `criterion` benchmarks: query build time, bind time, vs raw `sqlx`
+- [ ] `QueryLog` structured sink: `on_query(fn(QueryEvent))` behind `tracing` feature
+  - [ ] `QueryEvent { sql, params, duration_ms, table, rows_affected }`
+  - [ ] OpenTelemetry span emitted automatically when `tracing` feature is on

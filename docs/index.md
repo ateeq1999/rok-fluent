@@ -27,6 +27,10 @@ rok-fluent = { version = "0.4", features = ["active", "query", "postgres"] }
 | Testing with factories | [docs/guides/testing.md](guides/testing.md) |
 | Axum integration | [docs/guides/axum.md](guides/axum.md) |
 | Multi-tenancy | [docs/guides/multi-tenancy.md](guides/multi-tenancy.md) |
+| Debugging queries | [docs/guides/debugging.md](guides/debugging.md) *(planned)* |
+| Transactions & savepoints | [docs/guides/transactions.md](guides/transactions.md) *(planned)* |
+| Row-level & advisory locking | [docs/guides/locking.md](guides/locking.md) *(planned)* |
+| Performance tuning | [docs/guides/performance.md](guides/performance.md) *(planned)* |
 
 ## Feature Matrix
 
@@ -34,16 +38,17 @@ rok-fluent = { version = "0.4", features = ["active", "query", "postgres"] }
 |---|---|---|
 | `default` | `macros` | — |
 | `macros` | `#[derive(Model, Table, Resource, Seed)]`, `query!` | `rok-fluent-macros` |
-| **`active`** | **Active Record style** — `ModelQuery`, `PgModel`, `CrudService`, scopes, eager loading, morph | — |
-| **`query`** | **Typed DSL** — `db::select().from(User::table()).where_(User::ID.eq(1))` | — |
+| **`active`** | **Active Record** — `ModelQuery`, `PgModel`, `CrudService`, `FilterBuilder`, `SortBuilder`, `BatchService`, `SoftDeleteService`*, `SearchService`*, `AuditService`*, `TransactionService`*, `LockService`* | — |
+| **`query`** | **Typed DSL** — `SelectBuilder` with JOINs/CTEs/aggregates/set-ops, `InsertBuilder`, `UpdateBuilder`, `DeleteBuilder`, `Column<T,V>`, `Expr`, `AggExpr`, `FnExpr`, `CaseExpr`, `Loaded<T>` | — |
 | `postgres` | PostgreSQL executor, pool, transactions | `sqlx/postgres`, `tokio`, `dashmap` |
 | `sqlite` | SQLite executor | `sqlx/sqlite`, `tokio` |
 | `mysql` | MySQL executor | `sqlx/mysql`, `tokio` |
 | `axum` | `OrmLayer` Tower middleware | `axum`, `tower` (implies `postgres`) |
-| `tracing` | OpenTelemetry query spans | `tracing` |
+| `tracing` | OpenTelemetry query spans + `QueryLog`* | `tracing` |
 | `metrics` | Prometheus metrics | `metrics` |
 | `tenant` | `TenantLayer` multi-tenant context | `tower`, `http`, `tokio` |
 | `replica` | Read-replica routing | — |
+| `cli`* | `rok db` CLI tool | `clap` |
 | `factory` | `Factory` trait, `FactoryBuilder<T>`, `Faker` | — |
 | `factory-postgres` | DB-backed factory creation | `postgres` |
 | `migrate` | `MigrationRunner`, `Schema` builder | `async-trait`, `anyhow` |
@@ -51,6 +56,8 @@ rok-fluent = { version = "0.4", features = ["active", "query", "postgres"] }
 | `migrate-sqlite` | SQLite migration runner | `migrate` + `sqlite` |
 | `migrate-mysql` | MySQL migration runner | `migrate` + `mysql` |
 | `full` | Everything above | all |
+
+*\* = planned, not yet released*
 
 ## Query Styles
 
