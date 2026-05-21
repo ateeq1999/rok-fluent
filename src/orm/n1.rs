@@ -43,6 +43,7 @@ pub fn is_enabled() -> bool {
 }
 
 #[cfg(feature = "postgres")]
+#[allow(dead_code)] // called only from record(); both are pending ORM query-path wiring
 fn threshold() -> usize {
     THRESHOLD.load(Ordering::Relaxed)
 }
@@ -64,6 +65,7 @@ pub fn reset() {
 
 /// Record a query against `table` and emit a warning if the threshold is exceeded.
 #[cfg(feature = "postgres")]
+#[allow(dead_code)] // pending ORM executor hook wiring; ready for use once query path calls this
 pub(crate) fn record(table: &str, result_count: usize) {
     if !is_enabled() {
         return;

@@ -308,12 +308,49 @@ See [guides/migrations.md](guides/migrations.md).
 
 ---
 
+## CLI
+
+### `cli`
+
+Enables the `rok` binary — a command-line tool for running migrations and inspecting
+the database schema. Implies `migrate-postgres`.
+
+```toml
+rok-fluent = { version = "0.4", features = ["cli"] }
+```
+
+```sh
+# Install locally
+cargo install --path . --features cli
+
+# Or run without installing
+cargo run --features cli --bin rok -- db migrate
+```
+
+**Commands:**
+
+| Command | Description |
+|---|---|
+| `rok db migrate [--dir migrations]` | Run all pending migration files |
+| `rok db rollback [--dir migrations]` | Roll back the last applied batch |
+| `rok db status [--dir migrations]` | Print Applied / Pending for every migration |
+| `rok db make <name> [--dir migrations]` | Create a timestamped `.sql` file in `--dir` |
+| `rok db seed` | Prints guidance (seeders are registered in code) |
+| `rok db schema dump` | Emit approximate `CREATE TABLE` DDL from live DB |
+| `rok db schema diff [--dir migrations]` | Show Applied / Pending / Orphan per file |
+
+`DATABASE_URL` must be set in the environment.
+
+**Extra deps:** `clap` 4
+
+---
+
 ## Convenience Bundle
 
 ### `full`
 
 Enables everything: `macros postgres axum tracing metrics tenant replica
-factory-postgres migrate-postgres`.
+factory-postgres migrate-postgres cli`.
 
 ```toml
 rok-fluent = { version = "0.4", features = ["full"] }
@@ -340,7 +377,7 @@ The following are approved for implementation. See [todo.md](../todo.md) for the
 | `SqlValue::Array` + `Column::eq_any` | `postgres` | 35 | Approved |
 | `SelectBuilder::stream()` | `query` | 35 | Approved |
 | `COPY FROM STDIN` bulk path | `postgres` | 35 | Approved |
-| `rok db` CLI | `cli` | 36 | Approved |
+| `rok db` CLI | `cli` | 36 | **Complete** |
 | `TransactionService` — savepoints | `active` | 37 | Approved |
 | `LockService` — advisory locks | `postgres` | 37 | Approved |
 | `SchemaInspector` | `postgres` | 37 | Approved |

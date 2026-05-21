@@ -29,6 +29,7 @@ syn         = { version = "2",   features = ["full"] }
 quote       = "1"
 proc-macro2 = "1"
 heck        = "0.5"
+clap        = { version = "4",   features = ["derive"] }
 
 # ── Package ──────────────────────────────────────────────────────────────────
 
@@ -49,6 +50,11 @@ exclude     = ["docs/", "plan.md", "todo.md", ".github/", "target/"]
 [lib]
 name = "rok_fluent"
 path = "src/lib.rs"
+
+[[bin]]
+name = "rok"
+path = "src/bin/rok.rs"
+required-features = ["cli"]
 
 # ── Features ─────────────────────────────────────────────────────────────────
 
@@ -107,11 +113,14 @@ migrate-postgres = ["migrate", "postgres"]
 migrate-sqlite   = ["migrate", "sqlite"]
 migrate-mysql    = ["migrate", "mysql"]
 
+# rok db CLI — rok db migrate|rollback|status|make|seed|schema
+cli = ["dep:clap", "migrate-postgres"]
+
 # Convenience bundle
 full = [
     "macros", "active", "query",
     "postgres", "axum", "tracing", "metrics",
-    "tenant", "replica", "factory-postgres", "migrate-postgres",
+    "tenant", "replica", "factory-postgres", "migrate-postgres", "cli",
 ]
 
 # ── Dependencies ─────────────────────────────────────────────────────────────
@@ -141,6 +150,7 @@ tracing      = { version = "0.1", optional = true }
 metrics      = { version = "0.24", optional = true }
 async-trait  = { version = "0.1", optional = true }
 anyhow       = { version = "1",   optional = true }
+clap         = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

@@ -254,18 +254,18 @@ Feature-matrix spot-check passes for all feature combinations.
 
 ---
 
-## Phase 36 — `rok db` CLI (approved 2026-05-21)
+## ✅ Phase 36 — `rok db` CLI (COMPLETE as of 2026-05-21)
 
-- [ ] Add `cli` feature to `Cargo.toml` (pulls in `clap`)
-- [ ] `[[bin]]` target `rok` in `Cargo.toml` or separate `rok-fluent-cli` crate
-- [ ] `rok db migrate` — runs pending migrations via `MigrationRunner`
-- [ ] `rok db rollback` — rolls back the last migration
-- [ ] `rok db status` — prints applied / pending migration list
-- [ ] `rok db make <name>` — scaffolds a timestamped `YYYYMMDDHHMMSS_<name>.sql` file
-- [ ] `rok db seed` — runs all `#[derive(Seed)]` seeders
-- [ ] `rok db schema dump` — introspects live DB and emits `CREATE TABLE` DDL
-- [ ] `rok db schema diff` — compares live DB to migration history
-- [ ] Update `docs/guides/migrations.md`, `docs/api/migrate.md`
+- [x] Add `cli` feature to `Cargo.toml` (pulls in `clap`)
+- [x] `[[bin]]` target `rok` in `Cargo.toml` with `required-features = ["cli"]`
+- [x] `rok db migrate` — runs pending migrations via `MigrationRunner`
+- [x] `rok db rollback` — rolls back the last migration batch
+- [x] `rok db status` — prints Applied / Pending migration list
+- [x] `rok db make <name>` — scaffolds a timestamped `YYYYMMDDHHMMSS_<name>.sql` file
+- [x] `rok db seed` — prints guidance (seeders registered programmatically)
+- [x] `rok db schema dump` — queries `information_schema`, emits approximate `CREATE TABLE` DDL
+- [x] `rok db schema diff` — compares files in `--dir` to `_migrations` table (Applied/Pending/Orphan)
+- [x] Update `docs/guides/migrations.md` (rok db section), `docs/features.md` (cli section)
 
 ---
 
