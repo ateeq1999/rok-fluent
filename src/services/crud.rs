@@ -1,6 +1,7 @@
 //! [`CrudService<M>`] — zero-boilerplate CRUD wrapper for Active Record models.
 
 use crate::core::condition::SqlValue;
+use crate::orm::eager::EagerLoadable;
 use crate::orm::model_query::ModelQuery;
 use crate::orm::pagination::{CursorPage, Page, SimplePage};
 use crate::orm::postgres::model::PgModel;
@@ -47,6 +48,18 @@ where
         M::all(&self.pool).await
     }
 
+    /// Return all rows with eagerly-loaded relations.
+    pub async fn all_with(&self, relations: &[&str]) -> Result<Vec<M>, sqlx::Error>
+    where
+        M: EagerLoadable,
+    {
+        let mut results = M::all(&self.pool).await?;
+        for rel in relations {
+            results = M::load_eager(rel, results).await?;
+        }
+        Ok(results)
+    }
+
     /// Find a row by primary key; returns `None` if not found.
     pub async fn find(&self, id: impl Into<SqlValue> + Send) -> Result<Option<M>, sqlx::Error> {
         M::find_by_pk(&self.pool, id.into()).await
@@ -84,6 +97,23 @@ where
     pub async fn paginate(&self, page: u32, per_page: u32) -> Result<Page<M>, sqlx::Error> {
         let pool = self.pool.clone();
         crate::orm::postgres::pool::with_pool(pool, M::all_query().paginate(per_page, page)).await
+    }
+
+    /// Offset pagination with eagerly-loaded relations.
+    pub async fn paginate_with(
+        &self,
+        page: u32,
+        per_page: u32,
+        relations: &[&str],
+    ) -> Result<Page<M>, sqlx::Error>
+    where
+        M: EagerLoadable + Clone,
+    {
+        let mut page = self.paginate(page, per_page).await?;
+        for rel in relations {
+            page.data = M::load_eager(rel, page.data).await?;
+        }
+        Ok(page)
     }
 
     /// Simple pagination — no `COUNT(*)`; detects next page by over-fetching.

@@ -8,10 +8,10 @@
 //! | `#[derive(Seed)]` | derive | Generate `seed(pool, n)` scaffolding |
 //! | `query!` | function-like | Shorthand for building a `QueryBuilder` |
 
-use heck::{ToShoutySnakeCase, ToSnakeCase};
+use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use quote::quote;
+use quote::{quote, ToTokens};
 use syn::{parse_macro_input, Data, DeriveInput, Fields, LitStr};
 
 #[proc_macro_derive(Model, attributes(rok_orm, model, cast))]
@@ -106,18 +106,20 @@ fn expand_model(input: DeriveInput) -> syn::Result<TokenStream> {
                 }
                 Ok(())
             } else if is_model {
-                Err(meta.error(
-                    "unknown #[model(...)] struct attribute.\n\
+                let name = meta.path.to_token_stream().to_string();
+                Err(meta.error(format!(
+                    "unknown #[model(...)] struct attribute `{name}`.\n\
                     Fix: supported attrs are table, pk, timestamps, soft_delete, \
                     fillable, guarded",
-                ))
+                )))
             } else {
-                Err(meta.error(
-                    "unknown #[rok_orm(...)] struct attribute.\n\
+                let name = meta.path.to_token_stream().to_string();
+                Err(meta.error(format!(
+                    "unknown #[rok_orm(...)] struct attribute `{name}`.\n\
                     Fix: supported attrs are table, primary_key, primary_keys, id, \
                     soft_delete, timestamps, hidden, computed, fillable, guarded, scopes, \
                     tenant_scoped, typed_queries",
-                ))
+                )))
             }
         })?;
     }
@@ -198,16 +200,18 @@ fn expand_model(input: DeriveInput) -> syn::Result<TokenStream> {
                     } else if meta.path.is_ident("hidden") {
                         Ok(())
                     } else if is_field_model {
-                        Err(meta.error(
-                            "unknown #[model(...)] field attribute.\n\
+                        let name = meta.path.to_token_stream().to_string();
+                        Err(meta.error(format!(
+                            "unknown #[model(...)] field attribute `{name}`.\n\
                             Fix: supported attrs are skip, pk, column",
-                        ))
+                        )))
                     } else {
-                        Err(meta.error(
-                            "unknown #[rok_orm(...)] field attribute.\n\
+                        let name = meta.path.to_token_stream().to_string();
+                        Err(meta.error(format!(
+                            "unknown #[rok_orm(...)] field attribute `{name}`.\n\
                             Fix: supported attrs are skip, primary_key, column, hidden, \
                             index, unique_index, full_text_index",
-                        ))
+                        )))
                     }
                 })?;
             } else if attr.path().is_ident("cast") {
@@ -577,11 +581,12 @@ fn expand_resource(input: DeriveInput) -> syn::Result<TokenStream> {
                         when_auth = Some(s.value());
                         Ok(())
                     } else {
-                        Err(meta.error(
-                            "unknown resource attribute.\n\
+                        let name = meta.path.to_token_stream().to_string();
+                        Err(meta.error(format!(
+                            "unknown resource attribute `{name}`.\n\
                              Fix: expected `skip`, `rename = \"key\"`, `when_loaded`, \
                              or `when_auth = \"scope\"`",
-                        ))
+                        )))
                     }
                 })?;
             } else if attr.path().is_ident("rok_orm") {
@@ -953,13 +958,24 @@ pub fn derive_seed(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(Table, attributes(table))]
 pub fn derive_table(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    expand_table(input).unwrap_or_else(|e| e.to_compile_error().into())
+    expand_table(input)
+        .unwrap_or_else(|e| e.to_compile_error())
+        .into()
 }
 
-fn expand_table(input: DeriveInput) -> syn::Result<TokenStream> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RenameAll {
+    None,
+    CamelCase,
+    SnakeCase,
+    PascalCase,
+}
+
+fn expand_table(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     let struct_name = &input.ident;
 
     let mut custom_table: Option<String> = None;
+    let mut rename_all = RenameAll::None;
 
     for attr in &input.attrs {
         if !attr.path().is_ident("table") {
@@ -971,20 +987,29 @@ fn expand_table(input: DeriveInput) -> syn::Result<TokenStream> {
                 let s: LitStr = value.parse()?;
                 custom_table = Some(s.value());
                 Ok(())
-            } else if meta.path.is_ident("skip")
-                || meta.path.is_ident("searchable")
-                || meta.path.is_ident("rename_all")
-            {
-                // Struct-level attrs consumed elsewhere; skip silently.
-                if meta.input.peek(syn::Token![=]) {
-                    let _: LitStr = meta.value()?.parse()?;
+            } else if meta.path.is_ident("rename_all") {
+                let value = meta.value()?;
+                let s: LitStr = value.parse()?;
+                match s.value().as_str() {
+                    "camelCase" => rename_all = RenameAll::CamelCase,
+                    "snake_case" => rename_all = RenameAll::SnakeCase,
+                    "PascalCase" => rename_all = RenameAll::PascalCase,
+                    other => {
+                        return Err(meta.error(
+                            format!("unknown rename_all variant `{other}`.\n\
+                             Fix: expected `\"camelCase\"`, `\"snake_case\"`, or `\"PascalCase\"`"),
+                        ))
+                    }
                 }
                 Ok(())
+            } else if meta.path.is_ident("skip") || meta.path.is_ident("searchable") {
+                Ok(())
             } else {
-                Err(meta.error(
-                    "unknown #[table(...)] struct attribute.\n\
-                     Fix: expected `#[table(name = \"table_name\")]`",
-                ))
+                let name = meta.path.to_token_stream().to_string();
+                Err(meta.error(format!(
+                    "unknown #[table(...)] struct attribute `{name}`.\n\
+                     Fix: expected `#[table(name = \"table_name\")]` or `#[table(rename_all = \"...\")]`"
+                )))
             }
         })?;
     }
@@ -1056,10 +1081,12 @@ fn expand_table(input: DeriveInput) -> syn::Result<TokenStream> {
                         }
                         Ok(())
                     } else {
-                        Err(meta.error(
-                            "unknown #[table(...)] field attribute.\n\
-                             Fix: expected `#[table(skip)]` or `#[table(column = \"col_name\")]`",
-                        ))
+                        let name = meta.path.to_token_stream().to_string();
+                        Err(meta.error(format!(
+                            "unknown #[table(...)] field attribute `{name}`.\n\
+                             Fix: expected `#[table(skip)]`, `#[table(column = \"col_name\")]`, \
+                             or a relationship annotation like `#[table(has_many = Post)]`",
+                        )))
                     }
                 })?;
             }
@@ -1069,7 +1096,12 @@ fn expand_table(input: DeriveInput) -> syn::Result<TokenStream> {
             continue;
         }
 
-        let col_name = col_override.unwrap_or_else(|| field_ident.to_string());
+        let col_name = col_override.unwrap_or_else(|| match rename_all {
+            RenameAll::None => field_ident.to_string(),
+            RenameAll::CamelCase => field_ident.to_string().to_lower_camel_case(),
+            RenameAll::SnakeCase => field_ident.to_string().to_snake_case(),
+            RenameAll::PascalCase => field_ident.to_string().to_upper_camel_case(),
+        });
         col_defs.push((field_ident, field.ty.clone(), col_name));
     }
 
@@ -1153,5 +1185,81 @@ fn expand_table(input: DeriveInput) -> syn::Result<TokenStream> {
         }
     };
 
-    Ok(expanded.into())
+    Ok(expanded)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use syn::DeriveInput;
+
+    #[test]
+    fn rename_all_camel_case_transforms_column() {
+        let input: DeriveInput = syn::parse_str(
+            r#"#[derive(Table)]
+            #[table(name = "users", rename_all = "camelCase")]
+            struct User {
+                pub first_name: String,
+                pub last_name: String,
+                pub email_address: String,
+            }"#,
+        )
+        .unwrap();
+        let tokens = expand_table(input).unwrap();
+        let output = tokens.to_string();
+        assert!(output.contains(r#""firstName""#));
+        assert!(output.contains(r#""lastName""#));
+        assert!(output.contains(r#""emailAddress""#));
+    }
+
+    #[test]
+    fn rename_all_pascal_case_transforms_column() {
+        let input: DeriveInput = syn::parse_str(
+            r#"#[derive(Table)]
+            #[table(name = "users", rename_all = "PascalCase")]
+            struct User {
+                pub first_name: String,
+                pub email_address: String,
+            }"#,
+        )
+        .unwrap();
+        let tokens = expand_table(input).unwrap();
+        let output = tokens.to_string();
+        assert!(output.contains(r#""FirstName""#));
+        assert!(output.contains(r#""EmailAddress""#));
+    }
+
+    #[test]
+    fn rename_all_snake_case_transforms_column() {
+        let input: DeriveInput = syn::parse_str(
+            r#"#[derive(Table)]
+            #[table(name = "users", rename_all = "snake_case")]
+            struct User {
+                pub firstName: String,
+                pub emailAddress: String,
+            }"#,
+        )
+        .unwrap();
+        let tokens = expand_table(input).unwrap();
+        let output = tokens.to_string();
+        assert!(output.contains(r#""first_name""#));
+        assert!(output.contains(r#""email_address""#));
+    }
+
+    #[test]
+    fn column_override_still_takes_precedence() {
+        let input: DeriveInput = syn::parse_str(
+            r#"#[derive(Table)]
+            #[table(name = "users", rename_all = "camelCase")]
+            struct User {
+                #[table(column = "custom_col")]
+                pub first_name: String,
+            }"#,
+        )
+        .unwrap();
+        let tokens = expand_table(input).unwrap();
+        let output = tokens.to_string();
+        assert!(output.contains(r#""custom_col""#));
+        assert!(!output.contains(r#""firstName""#));
+    }
 }

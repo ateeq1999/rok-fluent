@@ -39,13 +39,33 @@ pub fn slow_threshold() -> u64 {
     SLOW_QUERY_THRESHOLD_MS.load(Ordering::Relaxed)
 }
 
-static LOGGER: once_cell::sync::Lazy<std::sync::Mutex<Option<QueryLogger>>> =
+static SLOW_LOGGER: once_cell::sync::Lazy<std::sync::Mutex<Option<QueryLogger>>> =
+    once_cell::sync::Lazy::new(|| std::sync::Mutex::new(None));
+
+static ON_QUERY_LOGGER: once_cell::sync::Lazy<std::sync::Mutex<Option<QueryLogger>>> =
     once_cell::sync::Lazy::new(|| std::sync::Mutex::new(None));
 
 /// Register a callback that is called for every slow query.
 pub fn set_logger(logger: QueryLogger) {
-    if let Ok(mut l) = LOGGER.lock() {
+    if let Ok(mut l) = SLOW_LOGGER.lock() {
         *l = Some(logger);
+    }
+}
+
+/// Register a callback that is called for **every** query (fast and slow).
+///
+/// Unlike [`set_logger`], this fires unconditionally regardless of the
+/// slow-query threshold.
+pub fn set_on_query(logger: QueryLogger) {
+    if let Ok(mut l) = ON_QUERY_LOGGER.lock() {
+        *l = Some(logger);
+    }
+}
+
+/// Unregister the on-query callback.
+pub fn clear_on_query() {
+    if let Ok(mut l) = ON_QUERY_LOGGER.lock() {
+        *l = None;
     }
 }
 
@@ -56,31 +76,39 @@ pub(crate) fn log_query(
     rows_affected: u64,
     table: &str,
 ) {
+    let event = QueryEvent {
+        sql: sql.to_string(),
+        params: params.to_vec(),
+        duration_ms,
+        rows_affected,
+        table: table.to_string(),
+    };
+
     // Emit a tracing span when the feature is enabled
     #[cfg(feature = "tracing")]
     {
-        let sql = sql.to_string();
-        let table = table.to_string();
         tracing::trace!(
             target: "rok_fluent::query",
-            sql = %sql,
-            table = %table,
-            duration_ms,
-            rows_affected,
+            sql = %event.sql,
+            table = %event.table,
+            duration_ms = event.duration_ms,
+            rows_affected = event.rows_affected,
             "query executed"
         );
     }
 
+    // Fire the on-query callback for every query.
+    if let Ok(l) = ON_QUERY_LOGGER.lock() {
+        if let Some(ref cb) = *l {
+            cb(&event);
+        }
+    }
+
+    // Fire the slow-query callback only when the threshold is exceeded.
     if duration_ms >= slow_threshold() {
-        if let Ok(l) = LOGGER.lock() {
+        if let Ok(l) = SLOW_LOGGER.lock() {
             if let Some(ref logger) = *l {
-                logger(&QueryEvent {
-                    sql: sql.to_string(),
-                    params: params.to_vec(),
-                    duration_ms,
-                    rows_affected,
-                    table: table.to_string(),
-                });
+                logger(&event);
             }
         }
     }
