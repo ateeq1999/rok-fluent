@@ -25,6 +25,14 @@ pub trait Model: Sized {
         None
     }
 
+    /// Columns marked `#[table(searchable)]` in declaration order.
+    ///
+    /// Used by [`SearchService`](crate::services::SearchService) as the default column
+    /// set when no explicit column list is passed.
+    fn searchable_columns() -> &'static [&'static str] {
+        &[]
+    }
+
     /// Auto-timestamp column names `(created_at, updated_at)`, if configured.
     fn timestamp_columns() -> Option<(&'static str, &'static str)> {
         None

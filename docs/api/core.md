@@ -13,6 +13,7 @@ pub trait Model: Sized {
     fn pk_value(&self) -> SqlValue;
     fn pk_values(&self) -> Vec<SqlValue> { vec![self.pk_value()] }
     fn soft_delete_column() -> Option<&'static str> { None }
+    fn searchable_columns() -> &'static [&'static str] { &[] }
     fn timestamp_columns() -> Option<(&'static str, &'static str)> { None }
 
     // Provided
@@ -52,6 +53,7 @@ Use whichever reads more naturally to you.
 | `#[rok_orm(hidden)]` | — | Exclude from `to_resource()` |
 | `#[rok_orm(index)]` | — | Register index hint |
 | `#[rok_orm(unique_index)]` | — | Register unique index hint |
+| `#[table(searchable)]` | — | Include in `searchable_columns()` for `SearchService` |
 | `#[cast(json)]` | — | Serialize/deserialize as JSON |
 | `#[cast(encrypted)]` | — | Redact in `to_resource()` as `"[ENCRYPTED]"` |
 | `#[cast(enum)]` | — | Use enum string cast |

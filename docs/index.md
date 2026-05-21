@@ -27,7 +27,7 @@ rok-fluent = { version = "0.4", features = ["active", "query", "postgres"] }
 | Testing with factories | [docs/guides/testing.md](guides/testing.md) |
 | Axum integration | [docs/guides/axum.md](guides/axum.md) |
 | Multi-tenancy | [docs/guides/multi-tenancy.md](guides/multi-tenancy.md) |
-| Debugging queries | [docs/guides/debugging.md](guides/debugging.md) *(planned)* |
+| Debugging queries | [docs/guides/debugging.md](guides/debugging.md) |
 | Transactions & savepoints | [docs/guides/transactions.md](guides/transactions.md) *(planned)* |
 | Row-level & advisory locking | [docs/guides/locking.md](guides/locking.md) *(planned)* |
 | Performance tuning | [docs/guides/performance.md](guides/performance.md) *(planned)* |

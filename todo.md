@@ -216,17 +216,21 @@ Feature-matrix spot-check passes for all feature combinations.
 
 ---
 
-## Phase 34 — Developer Experience (approved 2026-05-21)
+## ✅ Phase 34 — Developer Experience (COMPLETE as of 2026-05-21)
 
-- [ ] `.inspect()` on `SelectBuilder`, `InsertBuilder`, `UpdateBuilder`, `DeleteBuilder`
-  - [ ] Prints rendered SQL + bound params to `stderr` (behind `tracing` feature: emits a span)
-  - [ ] Returns `self` unchanged (builder-chain transparent)
-- [ ] `.explain(&pool) -> Result<String, sqlx::Error>` on `SelectBuilder` (PostgreSQL only)
-- [ ] `.explain_json(&pool) -> Result<serde_json::Value, sqlx::Error>` — structured plan
-- [ ] `#[table(searchable)]` field attribute — marks column for `SearchService` index
+- [x] `.inspect()` on `SelectBuilder`, `InsertBuilder`, `UpdateBuilder`, `DeleteBuilder`
+  - [x] Prints rendered SQL + bound params to `stderr` (behind `tracing` feature: emits a span)
+  - [x] Returns `self` unchanged (builder-chain transparent)
+- [x] `.explain(&pool) -> Result<String, sqlx::Error>` on `SelectBuilder` (PostgreSQL only)
+- [x] `.explain_json(&pool) -> Result<serde_json::Value, sqlx::Error>` — structured plan
+- [x] `#[table(searchable)]` field attribute — marks column for `SearchService` index
+  - [x] `Model::searchable_columns()` trait method (defaults to `&[]`)
+  - [x] `#[derive(Model)]` generates `searchable_columns()` from `#[table(searchable)]` fields
+  - [x] `SearchService` falls back to `M::searchable_columns()` when `cols` arg is empty
+  - [x] `expand_table` no longer skips searchable fields from column generation
 - [ ] `#[table(rename_all = "camelCase|snake_case|PascalCase")]` — rename column constants
 - [ ] Better proc-macro errors — `compile_error!` pointing to the offending `#[table(...)]` attribute
-- [ ] Update `docs/api/core.md`, `docs/guides/debugging.md`
+- [x] Update `docs/api/core.md`, `docs/guides/debugging.md`
 
 ---
 

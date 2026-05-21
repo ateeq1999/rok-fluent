@@ -286,6 +286,32 @@ impl SelectBuilder {
         self
     }
 
+    // ── Debug helpers ─────────────────────────────────────────────────────────
+
+    /// Print the rendered SQL and bound parameters to `stderr` without breaking the chain.
+    ///
+    /// Useful for quick debugging — insert `.inspect()` anywhere in a builder chain.
+    /// When the `tracing` feature is enabled, also emits a `tracing::debug!` event.
+    ///
+    /// ```rust,ignore
+    /// let rows = db::select()
+    ///     .from(users::table)
+    ///     .where_(users::active.eq(true))
+    ///     .inspect()        // ← prints to stderr here
+    ///     .fetch_all::<User>(&pool)
+    ///     .await?;
+    /// ```
+    pub fn inspect(self) -> Self {
+        let (sql, params) = self.to_sql_pg();
+        eprintln!("[rok-fluent] {sql}");
+        if !params.is_empty() {
+            eprintln!("[rok-fluent] params: {params:?}");
+        }
+        #[cfg(feature = "tracing")]
+        tracing::debug!(sql = %sql, ?params, "rok-fluent select");
+        self
+    }
+
     // ── SQL rendering ─────────────────────────────────────────────────────────
 
     /// Render to `(sql, params)` using PostgreSQL `$N` placeholders.
@@ -699,6 +725,54 @@ impl SelectBuilder {
             next_cursor,
             prev_cursor,
         ))
+    }
+
+    /// Run `EXPLAIN` on this query and return the query plan as a formatted string.
+    ///
+    /// Each line of the plan is joined with newlines. Useful for inspecting index usage.
+    ///
+    /// ```rust,ignore
+    /// let plan = db::select()
+    ///     .from(users::table)
+    ///     .where_(users::active.eq(true))
+    ///     .explain(&pool)
+    ///     .await?;
+    /// println!("{plan}");
+    /// ```
+    pub async fn explain(self, pool: &sqlx::PgPool) -> Result<String, sqlx::Error> {
+        let (inner_sql, params) = self.to_sql_pg();
+        let sql = format!("EXPLAIN {inner_sql}");
+        let rows = crate::core::sqlx::pg::build_query(&sql, params)
+            .fetch_all(pool)
+            .await?;
+        use sqlx::Row;
+        let lines: Vec<String> = rows
+            .into_iter()
+            .filter_map(|r| r.try_get::<String, _>(0).ok())
+            .collect();
+        Ok(lines.join("\n"))
+    }
+
+    /// Run `EXPLAIN (FORMAT JSON)` and return the structured query plan.
+    ///
+    /// Returns the root array element from PostgreSQL's JSON plan output.
+    ///
+    /// ```rust,ignore
+    /// let plan = db::select()
+    ///     .from(users::table)
+    ///     .explain_json(&pool)
+    ///     .await?;
+    /// let node_type = &plan[0]["Plan"]["Node Type"];
+    /// ```
+    pub async fn explain_json(self, pool: &sqlx::PgPool) -> Result<serde_json::Value, sqlx::Error> {
+        let (inner_sql, params) = self.to_sql_pg();
+        let sql = format!("EXPLAIN (FORMAT JSON) {inner_sql}");
+        let row = crate::core::sqlx::pg::build_query(&sql, params)
+            .fetch_one(pool)
+            .await?;
+        use sqlx::Row;
+        let plan: serde_json::Value = row.try_get(0)?;
+        Ok(plan)
     }
 }
 

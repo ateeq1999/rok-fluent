@@ -155,6 +155,7 @@ fn expand_model(input: DeriveInput) -> syn::Result<TokenStream> {
     let mut cast_pairs: Vec<(String, String)> = Vec::new();
     let mut index_hints: Vec<(String, String)> = Vec::new();
     let mut typed_query_fields: Vec<(String, String)> = Vec::new();
+    let mut searchable_fields: Vec<String> = Vec::new();
 
     for field in fields.iter() {
         let field_ident = match &field.ident {
@@ -167,6 +168,7 @@ fn expand_model(input: DeriveInput) -> syn::Result<TokenStream> {
         let mut is_pk = false;
         let mut cast_type: Option<String> = None;
         let mut index_kind: Option<String> = None;
+        let mut is_searchable = false;
 
         for attr in &field.attrs {
             if attr.path().is_ident("rok_orm") || attr.path().is_ident("model") {
@@ -227,6 +229,26 @@ fn expand_model(input: DeriveInput) -> syn::Result<TokenStream> {
                         ))),
                     }
                 })?;
+            } else if attr.path().is_ident("table") {
+                attr.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("searchable") {
+                        is_searchable = true;
+                        Ok(())
+                    } else if meta.path.is_ident("skip") {
+                        skip = true;
+                        Ok(())
+                    } else if meta.path.is_ident("column") {
+                        let value = meta.value()?;
+                        let s: LitStr = value.parse()?;
+                        col_override = Some(s.value());
+                        Ok(())
+                    } else {
+                        if meta.input.peek(syn::Token![=]) {
+                            let _: LitStr = meta.value()?.parse()?;
+                        }
+                        Ok(())
+                    }
+                })?;
             }
         }
 
@@ -253,6 +275,9 @@ fn expand_model(input: DeriveInput) -> syn::Result<TokenStream> {
         }
 
         if !skip {
+            if is_searchable {
+                searchable_fields.push(col_name.clone());
+            }
             if typed_queries {
                 typed_query_fields.push((field_ident.clone(), col_name.clone()));
             }
@@ -352,6 +377,18 @@ fn expand_model(input: DeriveInput) -> syn::Result<TokenStream> {
         vec![]
     };
 
+    let searchable_len = searchable_fields.len();
+    let searchable_impl = if !searchable_fields.is_empty() {
+        quote! {
+            fn searchable_columns() -> &'static [&'static str] {
+                static SEARCHABLE: [&str; #searchable_len] = [#(#searchable_fields),*];
+                &SEARCHABLE
+            }
+        }
+    } else {
+        quote! {}
+    };
+
     let fillable_len = fillable_fields.len();
     let guarded_len = guarded_fields.len();
     let fillable_impl = quote! {
@@ -416,6 +453,7 @@ fn expand_model(input: DeriveInput) -> syn::Result<TokenStream> {
             #pk_values_impl
             #soft_delete_impl
             #timestamps_impl
+            #searchable_impl
         }
 
         impl #struct_name {
@@ -995,6 +1033,9 @@ fn expand_table(input: DeriveInput) -> syn::Result<TokenStream> {
                         let s: LitStr = value.parse()?;
                         col_override = Some(s.value());
                         Ok(())
+                    } else if meta.path.is_ident("searchable") {
+                        // Marks a column as searchable — does not skip from column generation.
+                        Ok(())
                     } else if meta.path.is_ident("has_one")
                         || meta.path.is_ident("has_many")
                         || meta.path.is_ident("belongs_to")
@@ -1006,9 +1047,8 @@ fn expand_table(input: DeriveInput) -> syn::Result<TokenStream> {
                         || meta.path.is_ident("morph_many")
                         || meta.path.is_ident("morph_to")
                         || meta.path.is_ident("morph_to_many")
-                        || meta.path.is_ident("searchable")
                     {
-                        // Relationship / search annotations — skip the field from column gen.
+                        // Relationship annotations — skip the field from column gen.
                         skip = true;
                         // Consume any remaining tokens in this meta item.
                         while !meta.input.is_empty() {

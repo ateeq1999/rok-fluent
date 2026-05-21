@@ -160,6 +160,20 @@ impl InsertBuilder {
         self
     }
 
+    /// Print the rendered SQL and bound parameters to `stderr` without breaking the chain.
+    ///
+    /// When the `tracing` feature is enabled, also emits a `tracing::debug!` event.
+    pub fn inspect(self) -> Self {
+        let (sql, params) = self.to_sql_pg();
+        eprintln!("[rok-fluent] {sql}");
+        if !params.is_empty() {
+            eprintln!("[rok-fluent] params: {params:?}");
+        }
+        #[cfg(feature = "tracing")]
+        tracing::debug!(sql = %sql, ?params, "rok-fluent insert");
+        self
+    }
+
     /// Render to `(sql, params)` using PostgreSQL `$N` placeholders.
     pub fn to_sql_pg(&self) -> (String, Vec<SqlValue>) {
         let cols: Vec<String> = self.columns.iter().map(|c| format!("\"{c}\"")).collect();

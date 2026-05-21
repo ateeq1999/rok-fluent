@@ -30,17 +30,21 @@ impl<M: PgModel + Sync + Clone + serde::Serialize> SearchService<M> {
     /// Return all rows where any of `cols` matches `term` via `ILIKE '%term%'`.
     ///
     /// Columns are OR-ed: `(col1 ILIKE $1 OR col2 ILIKE $1 OR …)`.
-    /// When `cols` is empty, returns all rows.
+    /// When `cols` is empty, falls back to `M::searchable_columns()`.
+    /// When both are empty, returns all rows.
     pub async fn search(
         term: &str,
         cols: &[&str],
         pool: &sqlx::PgPool,
     ) -> Result<Vec<M>, sqlx::Error> {
-        let builder = ilike_builder::<M>(term, cols);
+        let effective = effective_cols::<M>(cols);
+        let builder = ilike_builder::<M>(term, &effective);
         M::find_where(pool, builder).await
     }
 
     /// Offset-paginated ILIKE search with a total-count query.
+    ///
+    /// When `cols` is empty, falls back to `M::searchable_columns()`.
     pub async fn search_paginated(
         term: &str,
         cols: &[&str],
@@ -48,7 +52,10 @@ impl<M: PgModel + Sync + Clone + serde::Serialize> SearchService<M> {
         per_page: u32,
         pool: &sqlx::PgPool,
     ) -> Result<Page<M>, sqlx::Error> {
-        let cols_owned: Vec<String> = cols.iter().map(|&c| c.to_owned()).collect();
+        let cols_owned: Vec<String> = effective_cols::<M>(cols)
+            .into_iter()
+            .map(|s| s.to_owned())
+            .collect();
         let term_owned = term.to_owned();
         let query = M::all_query()
             .and_where_group(move |b| ilike_into_builder::<M>(b, &term_owned, &cols_owned));
@@ -56,6 +63,8 @@ impl<M: PgModel + Sync + Clone + serde::Serialize> SearchService<M> {
     }
 
     /// Simple (no `COUNT(*)`) paginated ILIKE search.
+    ///
+    /// When `cols` is empty, falls back to `M::searchable_columns()`.
     pub async fn search_simple_paginated(
         term: &str,
         cols: &[&str],
@@ -63,7 +72,10 @@ impl<M: PgModel + Sync + Clone + serde::Serialize> SearchService<M> {
         per_page: u32,
         pool: &sqlx::PgPool,
     ) -> Result<SimplePage<M>, sqlx::Error> {
-        let cols_owned: Vec<String> = cols.iter().map(|&c| c.to_owned()).collect();
+        let cols_owned: Vec<String> = effective_cols::<M>(cols)
+            .into_iter()
+            .map(|s| s.to_owned())
+            .collect();
         let term_owned = term.to_owned();
         let query = M::all_query()
             .and_where_group(move |b| ilike_into_builder::<M>(b, &term_owned, &cols_owned));
@@ -76,28 +88,36 @@ impl<M: PgModel + Sync + Clone + serde::Serialize> SearchService<M> {
     /// Requires a GIN index on the concatenated column expression for best performance.
     /// Renders: `WHERE to_tsvector('english', col1 || ' ' || col2) @@ plainto_tsquery('english', $1)`
     ///
-    /// Falls back to ILIKE when `cols` is empty.
+    /// When `cols` is empty, falls back to `M::searchable_columns()`.
+    /// When both are empty, falls back to ILIKE.
     pub async fn fts(
         term: &str,
         cols: &[&str],
         pool: &sqlx::PgPool,
     ) -> Result<Vec<M>, sqlx::Error> {
-        if cols.is_empty() {
+        let effective = effective_cols::<M>(cols);
+        if effective.is_empty() {
             return Self::search(term, &[], pool).await;
         }
-        let builder = fts_builder::<M>(term, cols);
+        let builder = fts_builder::<M>(term, &effective);
         M::find_where(pool, builder).await
+    }
+}
+
+/// Returns `cols` if non-empty, else `M::searchable_columns()`.
+fn effective_cols<'a, M: Model>(cols: &'a [&'a str]) -> Vec<&'a str> {
+    if !cols.is_empty() {
+        cols.to_vec()
+    } else {
+        M::searchable_columns().to_vec()
     }
 }
 
 // ── internal helpers ──────────────────────────────────────────────────────────
 
 fn ilike_builder<M: Model>(term: &str, cols: &[&str]) -> QueryBuilder<M> {
-    ilike_into_builder(
-        M::query(),
-        term,
-        &cols.iter().map(|&s| s.to_owned()).collect::<Vec<_>>(),
-    )
+    let owned: Vec<String> = cols.iter().map(|&s| s.to_owned()).collect();
+    ilike_into_builder(M::query(), term, &owned)
 }
 
 fn ilike_into_builder<M: Model>(
