@@ -44,6 +44,7 @@ pub mod db;
 pub mod expr;
 pub mod loaded;
 pub mod table;
+pub mod window;
 
 mod delete;
 mod insert;
@@ -59,3 +60,4 @@ pub use loaded::Loaded;
 pub use select::{Join, JoinKind, Lock, LockConflict, SelectBuilder};
 pub use table::Table;
 pub use update::UpdateBuilder;
+pub use window::{dense_rank, ntile, rank, row_number, WinExpr, Window};

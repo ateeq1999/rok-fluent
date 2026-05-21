@@ -431,7 +431,148 @@ for e in &entries {
 Requires an `audit_log` table with columns:
 `table_name TEXT, record_id TEXT, operation TEXT, old_data JSONB, new_data JSONB, changed_at TIMESTAMPTZ`.
 
+### `TransactionService` — feature: `active` + `postgres`
+
+Manual transaction management with savepoints and CRUD inside the transaction.
+
+```rust,ignore
+let tx = TransactionService::begin(&pool).await?;
+
+// Savepoints
+tx.savepoint("sp1").await?;
+tx.rollback_to("sp1").await?;
+tx.release("sp1").await?;
+
+// CRUD inside the transaction (pool-free)
+let user = tx.create::<User>(&[("name", "Alice".into())]).await?;
+let user = tx.update_by_pk::<User>(42_i64, &[("name", "Bob".into())]).await?;
+tx.delete_by_pk::<User>(42_i64).await?;
+
+// Raw queries
+let rows: Vec<User> = tx.fetch_all("SELECT * FROM users WHERE active = $1", &[true.into()]).await?;
+
+tx.commit().await?;
+// or tx.rollback().await?;
+```
+
+### `LockService` — feature: `active` + `postgres`
+
+PostgreSQL advisory and row-level locking.
+
+```rust,ignore
+// Advisory lock — blocking
+LockService::acquire("my_lock", &pool).await?;
+LockService::release("my_lock", &pool).await?;
+
+// Advisory lock — non-blocking
+let acquired = LockService::try_acquire("my_lock", &pool).await?;
+if acquired { /* locked */ }
+
+// Advisory lock — timeout
+LockService::acquire_timeout("my_lock", Duration::from_secs(5), &pool).await?;
+
+// Transaction-scoped advisory lock (auto-released on commit/rollback)
+LockService::acquire_xact("my_tx_lock", &pool).await?;
+
+// Row-level locking via SelectBuilder (feature: query)
+db::select()
+    .from(User::table())
+    .where_(User::ID.eq(42_i64))
+    .lock(Lock::ForUpdate)
+    .lock_conflict(LockConflict::SkipLocked)
+    .fetch_one::<User>(&pool).await?;
+```
+
+### `SchemaInspector` — feature: `postgres`
+
+Query `information_schema` for column, index, and foreign-key metadata.
+
+```rust,ignore
+use rok_fluent::services::SchemaInspector;
+
+let cols = SchemaInspector::columns("users", &pool).await?;
+for col in &cols {
+    println!("{} {} (pk={}, nullable={})", col.name, col.data_type, col.is_pk, col.nullable);
+}
+
+let indexes = SchemaInspector::indexes("users", &pool).await?;
+let fks = SchemaInspector::foreign_keys("posts", &pool).await?;
+```
+
+`ColumnInfo` fields: `name`, `data_type`, `max_length`, `nullable`, `default`, `is_pk`.
+`IndexInfo` fields: `name`, `columns`, `unique`, `primary`.
+`ForeignKeyInfo` fields: `constraint_name`, `columns`, `foreign_table`, `foreign_columns`.
+
 ---
+
+## Typed DSL Window Functions (`rok_fluent::dsl::window`) — feature: `query`
+
+Window functions produce typed `WinExpr` values for use in SELECT projections via
+[`SelectBuilder::win_col()`](crate::dsl::select::SelectBuilder::win_col).
+
+### Standalone window functions
+
+| Function | SQL |
+|---|---|
+| `rank()` | `RANK() OVER (…)` |
+| `row_number()` | `ROW_NUMBER() OVER (…)` |
+| `dense_rank()` | `DENSE_RANK() OVER (…)` |
+| `ntile(n)` | `NTILE(n) OVER (…)` |
+
+### Column-based window functions
+
+| Method | SQL |
+|---|---|
+| `col.lag(offset)` | `LAG("col", offset) OVER (…)` |
+| `col.lag_with_default(offset, default)` | `LAG("col", offset, default) OVER (…)` |
+| `col.lead(offset)` | `LEAD("col", offset) OVER (…)` |
+| `col.lead_with_default(offset, default)` | `LEAD("col", offset, default) OVER (…)` |
+| `col.first_value()` | `FIRST_VALUE("col") OVER (…)` |
+| `col.last_value()` | `LAST_VALUE("col") OVER (…)` |
+
+### `Window` builder
+
+```rust,ignore
+use rok_fluent::dsl::{Window, rank, row_number};
+
+let w = Window::new()
+    .partition_by(Employee::DEPT)
+    .order_by(Employee::SALARY.desc());
+
+let query = db::select()
+    .from(Employee::table())
+    .columns([Employee::NAME, Employee::SALARY])
+    .win_col(rank().over(&w).alias("dept_rank"))
+    .win_col(row_number().over(Window::new().order_by(Employee::ID.asc())).alias("rn"));
+```
+
+---
+
+## `TypedJson<T>` column wrapper (`rok_fluent::orm::casts::TypedJson`) — feature: `postgres`
+
+Deserializes a `jsonb` column into a typed Rust struct using native PostgreSQL jsonb encoding.
+
+```rust,ignore
+use rok_fluent::TypedJson;
+
+#[derive(Debug, serde::Deserialize)]
+struct Metadata { key: String, value: i64 }
+
+#[derive(Debug, sqlx::FromRow, rok_fluent::Table)]
+struct Product {
+    id: i64,
+    name: String,
+    meta: TypedJson<Metadata>,
+}
+```
+
+`TypedJson<T>` implements `sqlx::Type<Postgres>`, `Decode`, and `Encode` by delegating
+to `sqlx::types::Json<T>`. It also implements `From<TypedJson<T>> for SqlValue` for use
+in query builders.
+
+---
+
+## OrmLayer (`rok_fluent::orm::orm_layer`) — feature: `axum`
 
 ## OrmLayer (`rok_fluent::orm::orm_layer`) — feature: `axum`
 

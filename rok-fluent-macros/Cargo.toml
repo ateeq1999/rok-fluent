@@ -9,7 +9,12 @@ homepage.workspace   = true
 description = "Procedural macros for rok-fluent (Model, Table, Resource, Seed derives)"
 keywords    = ["orm", "macro", "derive", "rok", "sqlx"]
 categories  = ["database"]
+rust-version = "1.85"
 exclude     = ["target/"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [lib]
 proc-macro = true

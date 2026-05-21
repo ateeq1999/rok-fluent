@@ -12,6 +12,7 @@
 
 use crate::core::condition::SqlValue;
 use serde::{de::DeserializeOwned, Serialize};
+use serde_json::Value;
 use uuid::Uuid;
 
 // ── Cast trait ────────────────────────────────────────────────────────────────
@@ -277,5 +278,72 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned> From<CastArray<T>> for S
 impl<T: serde::Serialize + serde::de::DeserializeOwned> From<Vec<T>> for CastArray<T> {
     fn from(v: Vec<T>) -> Self {
         CastArray(v)
+    }
+}
+
+// ── TypedJson<T> ───────────────────────────────────────────────────────────────
+
+/// Wraps a `jsonb` column value and deserializes it directly into a typed struct.
+///
+/// Unlike [`CastJson<T>`] (which stores JSON as `TEXT`), `TypedJson<T>` targets
+/// a native `jsonb` PostgreSQL column and uses `sqlx::types::Json<T>` for native
+/// jsonb encoding/decoding.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// #[derive(Debug, sqlx::FromRow, serde::Deserialize)]
+/// pub struct Metadata {
+///     pub key: String,
+///     pub value: i64,
+/// }
+///
+/// #[derive(Debug, sqlx::FromRow, rok_fluent::Table)]
+/// pub struct Product {
+///     pub id: i64,
+///     pub name: String,
+///     pub meta: TypedJson<Metadata>,
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypedJson<T>(pub T);
+
+impl<T: Serialize + DeserializeOwned> From<TypedJson<T>> for SqlValue {
+    fn from(val: TypedJson<T>) -> Self {
+        SqlValue::Json(serde_json::to_value(val.0).unwrap_or(Value::Null))
+    }
+}
+
+#[cfg(feature = "postgres")]
+impl<T: Serialize + DeserializeOwned + Send + Unpin> sqlx::Type<sqlx::Postgres> for TypedJson<T> {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        <sqlx::types::Json<T> as sqlx::Type<sqlx::Postgres>>::type_info()
+    }
+}
+
+#[cfg(feature = "postgres")]
+impl<'r, T: Serialize + DeserializeOwned + Send + Unpin> sqlx::Decode<'r, sqlx::Postgres>
+    for TypedJson<T>
+{
+    fn decode(
+        value: sqlx::postgres::PgValueRef<'r>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let json_val = <sqlx::types::Json<T> as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
+        Ok(TypedJson(json_val.0))
+    }
+}
+
+#[cfg(feature = "postgres")]
+impl<'q, T: Serialize + DeserializeOwned + Send + Unpin> sqlx::Encode<'q, sqlx::Postgres>
+    for TypedJson<T>
+{
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync>> {
+        <sqlx::types::Json<&T> as sqlx::Encode<sqlx::Postgres>>::encode_by_ref(
+            &sqlx::types::Json(&self.0),
+            buf,
+        )
     }
 }

@@ -1,15 +1,19 @@
 //! Optional query logging middleware.
 //!
 //! Records execution time and SQL for slow queries.
+//! When the `tracing` feature is enabled, a tracing span is emitted automatically.
 
+use crate::core::condition::SqlValue;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-/// A single logged query entry.
+/// A single logged query event.
 #[derive(Debug, Clone)]
-pub struct QueryLogEntry {
+pub struct QueryEvent {
     /// The SQL statement that was executed.
     pub sql: String,
+    /// Bound parameter values.
+    pub params: Vec<SqlValue>,
     /// Execution time in milliseconds.
     pub duration_ms: u64,
     /// Number of rows affected or returned.
@@ -19,7 +23,7 @@ pub struct QueryLogEntry {
 }
 
 /// A shared logging callback type.
-pub type QueryLogger = Arc<dyn Fn(&QueryLogEntry) + Send + Sync>;
+pub type QueryLogger = Arc<dyn Fn(&QueryEvent) + Send + Sync>;
 
 static SLOW_QUERY_THRESHOLD_MS: AtomicU64 = AtomicU64::new(200);
 
@@ -45,12 +49,34 @@ pub fn set_logger(logger: QueryLogger) {
     }
 }
 
-pub(crate) fn log_query(sql: &str, duration_ms: u64, rows_affected: u64, table: &str) {
+pub(crate) fn log_query(
+    sql: &str,
+    params: &[SqlValue],
+    duration_ms: u64,
+    rows_affected: u64,
+    table: &str,
+) {
+    // Emit a tracing span when the feature is enabled
+    #[cfg(feature = "tracing")]
+    {
+        let sql = sql.to_string();
+        let table = table.to_string();
+        tracing::trace!(
+            target: "rok_fluent::query",
+            sql = %sql,
+            table = %table,
+            duration_ms,
+            rows_affected,
+            "query executed"
+        );
+    }
+
     if duration_ms >= slow_threshold() {
         if let Ok(l) = LOGGER.lock() {
             if let Some(ref logger) = *l {
-                logger(&QueryLogEntry {
+                logger(&QueryEvent {
                     sql: sql.to_string(),
+                    params: params.to_vec(),
                     duration_ms,
                     rows_affected,
                     table: table.to_string(),

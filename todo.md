@@ -269,26 +269,29 @@ Feature-matrix spot-check passes for all feature combinations.
 
 ---
 
-## Phase 37 — New Services: Transactions, Locking, Schema Inspection (approved 2026-05-21)
+## ✅ Phase 37 — New Services: Transactions, Locking, Schema Inspection (COMPLETE 2026-05-21)
 
-- [ ] `src/services/transaction.rs` — `TransactionService`
-  - [ ] `TransactionService::run(&pool, |tx| async { … })` — closure-based transaction
-  - [ ] `tx.savepoint("name")`, `tx.rollback_to("name")`, `tx.release("name")`
-  - [ ] `tx.create::<M>()`, `tx.update::<M>()`, `tx.delete::<M>()` pool-free CRUD on a `&mut PgTransaction`
-- [ ] `src/services/lock.rs` — `LockService`
-  - [ ] `SelectBuilder::lock(Lock::ForUpdate | ForShare | SkipLocked | NoWait)` — row-level locking
-  - [ ] `LockService::acquire(key, pool)` — PostgreSQL `pg_advisory_lock`
-  - [ ] `LockService::try_acquire(key, pool) -> bool` — non-blocking `pg_try_advisory_lock`
-  - [ ] `LockService::release(key, pool)` — `pg_advisory_unlock`
-- [ ] `src/services/schema_inspector.rs` — `SchemaInspector`
-  - [ ] `SchemaInspector::columns(table, pool)` → `Vec<ColumnInfo>`
-  - [ ] `SchemaInspector::indexes(table, pool)` → `Vec<IndexInfo>`
-  - [ ] `SchemaInspector::foreign_keys(table, pool)` → `Vec<ForeignKeyInfo>`
-  - [ ] Used internally by `rok db schema dump`
-- [ ] `SelectBuilder::distinct_on(cols)` — PostgreSQL `SELECT DISTINCT ON (col, …)`
-- [ ] Window function support: `Column::rank()`, `row_number()`, `lag(n)`, `lead(n)` + `Window` builder
-- [ ] `TypedJson<T>` column wrapper — deserializes `jsonb` directly into a typed struct
-- [ ] Update `docs/api/orm.md`, `docs/guides/transactions.md`, `docs/guides/locking.md`
+- [x] `src/services/transaction.rs` — `TransactionService`
+  - [x] `TransactionService::begin(&pool) -> TxCtx`
+  - [x] `TxCtx::savepoint(name)`, `rollback_to(name)`, `release(name)`
+  - [x] `TxCtx::create/update/delete/fetch_all/fetch_optional` — pool-free CRUD on `&mut Transaction`
+- [x] `src/services/lock.rs` — `LockService`
+  - [x] `SelectBuilder::lock(Lock::ForUpdate | ForNoKeyUpdate | ForShare | ForKeyShare)` — row-level locking
+  - [x] `SelectBuilder::lock_conflict(LockConflict::SkipLocked | NoWait)`
+  - [x] `LockService::acquire(key, pool)` — PostgreSQL `pg_advisory_lock`
+  - [x] `LockService::try_acquire(key, pool) -> bool` — non-blocking `pg_try_advisory_lock`
+  - [x] `LockService::release(key, pool)` — `pg_advisory_unlock`
+  - [x] `LockService::acquire_xact/try_acquire_xact` — transaction-scoped advisory locks
+  - [x] `LockService::acquire_timeout(key, timeout, pool)` — `set_lock_timeout` wrapper
+- [x] `src/services/schema_inspector.rs` — `SchemaInspector`
+  - [x] `SchemaInspector::columns(table, pool)` → `Vec<ColumnInfo>`
+  - [x] `SchemaInspector::indexes(table, pool)` → `Vec<IndexInfo>`
+  - [x] `SchemaInspector::foreign_keys(table, pool)` → `Vec<ForeignKeyInfo>`
+  - [x] Used internally by `rok db schema dump`
+- [x] `SelectBuilder::distinct_on(cols)` — PostgreSQL `SELECT DISTINCT ON (col, …)`
+- [x] Window function support: `rank()`, `row_number()`, `dense_rank()`, `ntile(n)` free functions; `Column::lag(n)`, `lead(n)`, `first_value()`, `last_value()`; `Window` builder with `partition_by`/`order_by`; `WinExpr` with `.over(w)`/`.alias(n)`; `SelectBuilder::win_col()`
+- [x] `TypedJson<T>` column wrapper — deserializes `jsonb` directly into a typed struct via `sqlx::types::Json<T>`; `From<TypedJson<T>> for SqlValue`
+- [x] Update `docs/api/orm.md`, `docs/guides/transactions.md`, `docs/guides/locking.md` — add `TransactionService`, `LockService`, `SchemaInspector`, window functions, `TypedJson<T>`
 
 ---
 

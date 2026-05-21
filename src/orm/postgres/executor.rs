@@ -126,7 +126,7 @@ where
     };
     let duration = start.elapsed().as_millis() as u64;
     let rows = result.as_ref().map(|v| v.len() as u64).unwrap_or(0);
-    super::query_log::log_query(&sql, duration, rows, T::table_name());
+    super::query_log::log_query(&sql, &[], duration, rows, T::table_name());
     result
 }
 
@@ -163,7 +163,7 @@ where
         .as_ref()
         .map(|r| if r.is_some() { 1 } else { 0 })
         .unwrap_or(0);
-    super::query_log::log_query(&sql, duration, rows, T::table_name());
+    super::query_log::log_query(&sql, &[], duration, rows, T::table_name());
     result
 }
 
@@ -194,11 +194,11 @@ pub async fn count<T: Model>(pool: &PgPool, builder: QueryBuilder<T>) -> Result<
         Ok(row) => {
             use sqlx::Row;
             let val = row.try_get::<i64, _>(0)?;
-            super::query_log::log_query(&sql, duration, 1, T::table_name());
+            super::query_log::log_query(&sql, &[], duration, 1, T::table_name());
             Ok(val)
         }
         Err(e) => {
-            super::query_log::log_query(&sql, duration, 0, T::table_name());
+            super::query_log::log_query(&sql, &[], duration, 0, T::table_name());
             Err(e)
         }
     }
@@ -239,7 +239,7 @@ pub async fn insert<T: 'static>(
     let result = execute_raw(pool, &sql, params).await;
     let duration = start.elapsed().as_millis() as u64;
     let rows = result.as_ref().copied().unwrap_or(0);
-    super::query_log::log_query(&sql, duration, rows, table);
+    super::query_log::log_query(&sql, &[], duration, rows, table);
     dispatch_created::<T>(table, data);
     dispatch_saved::<T>(table, data);
     result
@@ -259,7 +259,7 @@ pub async fn update<T: Model + 'static>(
     let result = execute_raw(pool, &sql, params).await;
     let duration = start.elapsed().as_millis() as u64;
     let rows = result.as_ref().copied().unwrap_or(0);
-    super::query_log::log_query(&sql, duration, rows, table);
+    super::query_log::log_query(&sql, &[], duration, rows, table);
     dispatch_updated::<T>(table, data);
     dispatch_saved::<T>(table, data);
     result
@@ -277,7 +277,7 @@ pub async fn delete<T: Model + 'static>(
     let result = execute_raw(pool, &sql, params).await;
     let duration = start.elapsed().as_millis() as u64;
     let rows = result.as_ref().copied().unwrap_or(0);
-    super::query_log::log_query(&sql, duration, rows, table);
+    super::query_log::log_query(&sql, &[], duration, rows, table);
     dispatch_deleted::<T>(table, &[]);
     result
 }
@@ -300,7 +300,7 @@ pub async fn bulk_insert<T: 'static>(
     let result = execute_raw(pool, &sql, params).await;
     let duration = start.elapsed().as_millis() as u64;
     let rows_affected = result.as_ref().copied().unwrap_or(0);
-    super::query_log::log_query(&sql, duration, rows_affected, table);
+    super::query_log::log_query(&sql, &[], duration, rows_affected, table);
     dispatch_created::<T>(table, first_row);
     dispatch_saved::<T>(table, first_row);
     result
@@ -323,7 +323,7 @@ pub async fn soft_delete<T: Model + 'static>(
     let result = execute_raw(pool, &sql, params).await;
     let duration = start.elapsed().as_millis() as u64;
     let rows = result.as_ref().copied().unwrap_or(0);
-    super::query_log::log_query(&sql, duration, rows, table);
+    super::query_log::log_query(&sql, &[], duration, rows, table);
     dispatch_deleted::<T>(table, &[]);
     result
 }
@@ -345,7 +345,7 @@ pub async fn restore<T: Model>(
     let result = execute_raw(pool, &sql, params).await;
     let duration = start.elapsed().as_millis() as u64;
     let rows = result.as_ref().copied().unwrap_or(0);
-    super::query_log::log_query(&sql, duration, rows, T::table_name());
+    super::query_log::log_query(&sql, &[], duration, rows, T::table_name());
     result
 }
 
@@ -364,7 +364,7 @@ pub async fn touch<T: Model>(pool: &PgPool, builder: QueryBuilder<T>) -> Result<
         let result = execute_raw(pool, &sql, params).await;
         let duration = start.elapsed().as_millis() as u64;
         let rows = result.as_ref().copied().unwrap_or(0);
-        super::query_log::log_query(&sql, duration, rows, T::table_name());
+        super::query_log::log_query(&sql, &[], duration, rows, T::table_name());
         result
     } else {
         Ok(0)
@@ -388,12 +388,12 @@ pub async fn aggregate<T: Model>(
     let duration = start.elapsed().as_millis() as u64;
     match result {
         Ok(row) => {
-            super::query_log::log_query(&sql, duration, 1, T::table_name());
+            super::query_log::log_query(&sql, &[], duration, 1, T::table_name());
             use sqlx::Row;
             Ok(row.and_then(|r| r.try_get::<Option<f64>, _>(0).ok().flatten()))
         }
         Err(e) => {
-            super::query_log::log_query(&sql, duration, 0, T::table_name());
+            super::query_log::log_query(&sql, &[], duration, 0, T::table_name());
             Err(e)
         }
     }
@@ -410,7 +410,7 @@ pub async fn upsert<T: Model>(
     let result = execute_raw(pool, &sql, params).await;
     let duration = start.elapsed().as_millis() as u64;
     let rows = result.as_ref().copied().unwrap_or(0);
-    super::query_log::log_query(&sql, duration, rows, T::table_name());
+    super::query_log::log_query(&sql, &[], duration, rows, T::table_name());
     result
 }
 
@@ -431,7 +431,7 @@ pub async fn increment<T: Model>(
     let result = execute_raw(pool, &sql, params).await;
     let duration = start.elapsed().as_millis() as u64;
     let rows = result.as_ref().copied().unwrap_or(0);
-    super::query_log::log_query(&sql, duration, rows, T::table_name());
+    super::query_log::log_query(&sql, &[], duration, rows, T::table_name());
     result
 }
 
@@ -463,11 +463,11 @@ where
         Ok(rows) => {
             let count = rows.len() as u64;
             let row = rows.into_iter().next().ok_or(sqlx::Error::RowNotFound)?;
-            super::query_log::log_query(&sql, duration, count, table);
+            super::query_log::log_query(&sql, &[], duration, count, table);
             Ok(row)
         }
         Err(e) => {
-            super::query_log::log_query(&sql, duration, 0, table);
+            super::query_log::log_query(&sql, &[], duration, 0, table);
             Err(e)
         }
     }
@@ -491,7 +491,7 @@ where
     let result = sqlx_pg::fetch_all_as::<T>(pool, &sql, params).await;
     let duration = start.elapsed().as_millis() as u64;
     let rows_affected = result.as_ref().map(|v| v.len() as u64).unwrap_or(0);
-    super::query_log::log_query(&sql, duration, rows_affected, table);
+    super::query_log::log_query(&sql, &[], duration, rows_affected, table);
     result
 }
 
@@ -513,7 +513,7 @@ where
     let result = sqlx_pg::fetch_all_as::<T>(pool, &sql, base_params).await;
     let duration = start.elapsed().as_millis() as u64;
     let rows_affected = result.as_ref().map(|v| v.len() as u64).unwrap_or(0);
-    super::query_log::log_query(&sql, duration, rows_affected, table);
+    super::query_log::log_query(&sql, &[], duration, rows_affected, table);
     dispatch_updated::<T>(table, data);
     dispatch_saved::<T>(table, data);
     result
@@ -535,7 +535,7 @@ where
     let result = sqlx_pg::fetch_all_as::<T>(pool, &sql, base_params).await;
     let duration = start.elapsed().as_millis() as u64;
     let rows_affected = result.as_ref().map(|v| v.len() as u64).unwrap_or(0);
-    super::query_log::log_query(&sql, duration, rows_affected, table);
+    super::query_log::log_query(&sql, &[], duration, rows_affected, table);
     dispatch_deleted::<T>(table, &[]);
     result
 }
@@ -594,7 +594,7 @@ pub async fn bulk_upsert<T: Model + 'static>(
     let result = execute_raw(pool, &sql, params).await;
     let duration = start.elapsed().as_millis() as u64;
     let rows_affected = result.as_ref().copied().unwrap_or(0);
-    super::query_log::log_query(&sql, duration, rows_affected, table);
+    super::query_log::log_query(&sql, &[], duration, rows_affected, table);
     result
 }
 
@@ -616,11 +616,11 @@ where
         Ok(rows) => {
             let count = rows.len() as u64;
             let row = rows.into_iter().next().ok_or(sqlx::Error::RowNotFound)?;
-            super::query_log::log_query(&sql, duration, count, T::table_name());
+            super::query_log::log_query(&sql, &[], duration, count, T::table_name());
             Ok(row)
         }
         Err(e) => {
-            super::query_log::log_query(&sql, duration, 0, T::table_name());
+            super::query_log::log_query(&sql, &[], duration, 0, T::table_name());
             Err(e)
         }
     }

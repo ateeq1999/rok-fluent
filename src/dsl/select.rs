@@ -4,6 +4,7 @@ use super::{
     column::{AggExpr, Column, OrderExpr},
     expr::Expr,
     table::Table,
+    window::WinExpr,
 };
 use crate::core::condition::SqlValue;
 
@@ -229,6 +230,15 @@ impl SelectBuilder {
     /// `SELECT DISTINCT`
     pub fn distinct(mut self) -> Self {
         self.distinct = true;
+        self
+    }
+
+    /// Add a window function expression to the SELECT projection.
+    ///
+    /// See [`WinExpr`] for construction via [`rank()`](super::window::rank),
+    /// [`row_number()`](super::window::row_number), [`Column::lag()`], etc.
+    pub fn win_col(mut self, expr: WinExpr) -> Self {
+        self.columns.push(expr.to_projection_sql());
         self
     }
 

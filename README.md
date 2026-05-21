@@ -13,15 +13,15 @@ rok-fluent = { version = "0.4", features = ["active", "query", "postgres"] }
 |------|----------------|
 | `macros` *(default)* | `#[derive(Model, Table, Resource, Seed)]`, `query!` macro |
 | `active` | Active Record — `ModelQuery`, `PgModel`, `CrudService`, scopes, eager loading |
-| `query` | Typed DSL — `db::select().from(table).where_(…)`, JOINs, CTEs, aggregates |
+| `query` | Typed DSL — `db::select().from(table).where_(…)`, JOINs, CTEs, aggregates, window functions |
 | `postgres` / `sqlite` / `mysql` | Database backend |
 | `axum` | `OrmLayer` middleware (implies `postgres`) |
 | `tracing` / `metrics` | OpenTelemetry spans / Prometheus counters |
 | `tenant` | Multi-tenancy via Tower layer |
 | `replica` | Read-replica routing strategies |
-| `factory` | Test factories with `Faker` data generator |
+| `factory` / `factory-postgres` | Test factories with `Faker` data generator |
 | `migrate` / `migrate-postgres` / `migrate-sqlite` / `migrate-mysql` | Schema migration runner |
-| `cli` | `rok db` CLI — migrate, rollback, status, schema dump |
+| `cli` | `rok db` CLI — migrate, rollback, status, schema dump, schema diff |
 | `full` | Everything above |
 
 ## Quick Start
@@ -70,6 +70,14 @@ let rows: Vec<(User, Post)> = db::select()
 let page: Page<User> = db::select()
     .from(User::table())
     .paginate(1, 25, &pool).await?;
+
+// Window functions — rank, row_number, lag, lead
+use rok_fluent::dsl::{rank, dense_rank, Window, row_number};
+
+let ranked: Vec<(User, Option<i64>)> = db::select()
+    .from(User::table())
+    .win_col(rank().over(Window::new().order_by(User::SCORE.desc())).alias("rank"))
+    .fetch_all(&pool).await?;
 ```
 
 ### Active Record (`active` + `postgres` features)
@@ -100,6 +108,22 @@ let user = User::find(42_i64).await?;
 let page: Page<User> = User::query()
     .where_eq("active", true)
     .paginate(1, 25).await?;
+```
+
+### Transactions & Locking
+
+```rust
+use rok_fluent::services::{TransactionService, LockService};
+
+// Transaction with savepoints
+let tx = TransactionService::begin(&pool).await?;
+let result = tx.create(&[("name", "Alice".into())]).await?;
+tx.commit().await?;
+
+// Advisory lock
+LockService::acquire("deploy_lock", &pool).await?;
+// ... critical section ...
+LockService::release("deploy_lock", &pool).await?;
 ```
 
 ### Service Layer (`active` + `postgres`)

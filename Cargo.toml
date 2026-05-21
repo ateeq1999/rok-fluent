@@ -45,11 +45,18 @@ description = "Eloquent-inspired async ORM for Rust (PostgreSQL, MySQL, SQLite)"
 keywords    = ["orm", "database", "async", "postgres", "sqlx"]
 categories  = ["database"]
 readme      = "README.md"
+rust-version = "1.85"
 exclude     = ["docs/", "plan.md", "todo.md", ".github/", "target/"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+targets = ["x86_64-unknown-linux-gnu"]
 
 [lib]
 name = "rok_fluent"
 path = "src/lib.rs"
+bench = false
 
 [[bin]]
 name = "rok"
@@ -152,5 +159,10 @@ async-trait  = { version = "0.1", optional = true }
 anyhow       = { version = "1",   optional = true }
 clap         = { workspace = true, optional = true }
 
+[[bench]]
+name = "query_build"
+harness = false
+
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
+criterion = { version = "0.5", features = ["html_reports"] }

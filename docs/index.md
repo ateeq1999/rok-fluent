@@ -28,8 +28,8 @@ rok-fluent = { version = "0.4", features = ["active", "query", "postgres"] }
 | Axum integration | [docs/guides/axum.md](guides/axum.md) |
 | Multi-tenancy | [docs/guides/multi-tenancy.md](guides/multi-tenancy.md) |
 | Debugging queries | [docs/guides/debugging.md](guides/debugging.md) |
-| Transactions & savepoints | [docs/guides/transactions.md](guides/transactions.md) *(planned)* |
-| Row-level & advisory locking | [docs/guides/locking.md](guides/locking.md) *(planned)* |
+| Transactions & savepoints | [docs/guides/transactions.md](guides/transactions.md) |
+| Row-level & advisory locking | [docs/guides/locking.md](guides/locking.md) |
 | Performance tuning | [docs/guides/performance.md](guides/performance.md) |
 
 ## Feature Matrix
@@ -57,7 +57,7 @@ rok-fluent = { version = "0.4", features = ["active", "query", "postgres"] }
 | `migrate-mysql` | MySQL migration runner | `migrate` + `mysql` |
 | `full` | Everything above | all |
 
-*\* = planned, not yet released*
+*\* = planned, not yet released (will be removed before v0.4.0 publish)*
 
 ## Query Styles
 

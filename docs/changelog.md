@@ -7,13 +7,19 @@ conventions. Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
-### Remaining
+### Added
 
-- **Phase 37** — `TransactionService`, `LockService`, `SchemaInspector`, window functions, `TypedJson<T>`
-- **Phase 38** — Ecosystem: crates.io publish, MSRV policy, fuzz/bench suite, `QueryLog`
-- **Phase 14** — README.md, `cargo doc` verification
-
-See [todo.md](../todo.md) for the full task breakdown.
+- **`TransactionService`** — `TransactionService::begin()`, `TxCtx::savepoint/rollback_to/release`, pool-free CRUD on `&mut Transaction`. See [transactions guide](guides/transactions.md).
+- **`LockService`** — advisory locks (`acquire`, `try_acquire`, `release`, `acquire_xact`, `acquire_timeout`), row-level locking on `SelectBuilder` (`ForUpdate`, `ForNoKeyUpdate`, `ForShare`, `ForKeyShare`, `SkipLocked`, `NoWait`). See [locking guide](guides/locking.md).
+- **`SchemaInspector`** — `columns()`, `indexes()`, `foreign_keys()` queries against `information_schema` (PostgreSQL). Used by `rok db schema dump`.
+- **Window functions** — `rank()`, `row_number()`, `dense_rank()`, `ntile(n)` free functions; `Column::lag(n)/lead(n)/first_value()/last_value()`; `Window` builder with `partition_by`/`order_by`; `SelectBuilder::win_col()`. See [ORM docs](api/orm.md).
+- **`TypedJson<T>`** — typed `jsonb` column wrapper via `sqlx::types::Json<T>` delegation. `From<TypedJson<T>> for SqlValue`.
+- **MSRP policy** — `rust-version = "1.85"` in `Cargo.toml`; CI validates against MSRP.
+- **`cargo-fuzz` targets** — SQL rendering correctness fuzzers for PostgreSQL (`sql_render_pg`) and SQLite (`sql_render_qmark`).
+- **`criterion` benchmarks** — query build time benchmarks (7 benchmarks, 143ns–2.17µs range).
+- **`QueryLog` structured sink** — `QueryEvent { sql, params, duration_ms, table, rows_affected }`; `tracing::trace!` span emitted when `tracing` feature is enabled.
+- **`docs.rs` metadata** — `all-features = true` + `--cfg docsrs` for auto-cfg feature badges.
+- **`SelectBuilder::distinct_on(cols)`** — PostgreSQL `SELECT DISTINCT ON (col, …)`.
 
 ---
 

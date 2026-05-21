@@ -1,0 +1,37 @@
+[workspace]
+
+[package]
+name = "rok-fluent-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.rok-fluent]
+path = ".."
+features = ["full"]
+
+[dependencies.rok-fluent-macros]
+path = "../rok-fluent-macros"
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "sql_render_pg"
+path = "fuzz_targets/sql_render_pg.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sql_render_qmark"
+path = "fuzz_targets/sql_render_qmark.rs"
+test = false
+doc = false
+bench = false

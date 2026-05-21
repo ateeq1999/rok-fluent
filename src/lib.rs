@@ -1,3 +1,5 @@
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+
 //! **rok-fluent** — async ORM for Rust with PostgreSQL, MySQL, and SQLite.
 //!
 //! # Feature flags
@@ -21,6 +23,7 @@
 
 pub mod core;
 pub mod orm;
+pub use orm::casts::TypedJson;
 
 #[cfg(feature = "factory")]
 pub mod factory;
