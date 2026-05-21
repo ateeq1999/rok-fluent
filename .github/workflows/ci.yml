@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
 
@@ -27,15 +28,7 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
+      - uses: Swatinem/rust-cache@v2
 
       - name: Format check
         run: cargo fmt --all -- --check
@@ -63,3 +56,72 @@ jobs:
 
       - name: Check (full bundle)
         run: cargo check --features full
+
+  check-version:
+    name: Check version
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
+    outputs:
+      should_publish: ${{ steps.check.outputs.should_publish }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from Cargo.toml
+        id: check
+        run: |
+          VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            "https://crates.io/api/v1/crates/rok-fluent/$VERSION")
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    needs: [check-version, test]
+    if: needs.check-version.outputs.should_publish == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Publish rok-fluent-macros
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p rok-fluent-macros --no-verify
+
+      - name: Wait for crates.io to index
+        run: |
+          VERSION=${{ needs.check-version.outputs.version }}
+          for i in $(seq 1 12); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              "https://crates.io/api/v1/crates/rok-fluent-macros/$VERSION")
+            if [ "$STATUS" = "200" ]; then
+              echo "rok-fluent-macros $VERSION is indexed."
+              break
+            fi
+            sleep 15
+          done
+
+      - name: Publish rok-fluent
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p rok-fluent --no-verify
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "v${{ needs.check-version.outputs.version }}"
+          body: |
+            ## rok-fluent v${{ needs.check-version.outputs.version }}
+            Published to [crates.io](https://crates.io/crates/rok-fluent/${{ needs.check-version.outputs.version }}).
+            See [CHANGELOG](https://github.com/ateeq1999/rok-fluent/blob/main/docs/changelog.md) for details.
+          generate_release_notes: true
