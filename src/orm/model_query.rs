@@ -360,6 +360,62 @@ where
         }
     }
 
+    // ── DSL bridge ────────────────────────────────────────────────────────────
+
+    /// Inject a typed DSL [`Expr`](crate::dsl::expr::Expr) as an `AND` condition.
+    ///
+    /// Requires both `active` and `query` features.
+    ///
+    /// ```rust,ignore
+    /// let posts = Post::all_query()
+    ///     .and_expr(posts::user_id.eq(42_i64).and(posts::published.eq(true)))
+    ///     .get()
+    ///     .await?;
+    /// ```
+    #[cfg(all(feature = "active", feature = "query"))]
+    #[must_use]
+    pub fn and_expr(self, expr: crate::dsl::expr::Expr) -> Self {
+        Self {
+            builder: self.builder.push_condition(
+                crate::core::condition::JoinOp::And,
+                crate::orm::bridge::expr_to_condition(expr),
+            ),
+            ..self
+        }
+    }
+
+    /// Inject a typed DSL [`Expr`](crate::dsl::expr::Expr) as an `OR` condition.
+    ///
+    /// Requires both `active` and `query` features.
+    #[cfg(all(feature = "active", feature = "query"))]
+    #[must_use]
+    pub fn or_expr(self, expr: crate::dsl::expr::Expr) -> Self {
+        Self {
+            builder: self.builder.push_condition(
+                crate::core::condition::JoinOp::Or,
+                crate::orm::bridge::expr_to_condition(expr),
+            ),
+            ..self
+        }
+    }
+
+    /// Convert this Active Record chain into a DSL [`SelectBuilder`](crate::dsl::SelectBuilder).
+    ///
+    /// Scopes and soft-delete filters are applied before conversion.
+    /// Requires both `active` and `query` features.
+    ///
+    /// ```rust,ignore
+    /// let sel = Post::all_query()
+    ///     .and_where("published", true)
+    ///     .into_dsl()
+    ///     .inner_join(users::table, posts::user_id.eq(users::id))
+    ///     .select([users::name, posts::title]);
+    /// ```
+    #[cfg(all(feature = "active", feature = "query"))]
+    pub fn into_dsl(self) -> crate::dsl::SelectBuilder {
+        crate::orm::bridge::model_query_into_select(self.into_final_builder())
+    }
+
     // ── locking ───────────────────────────────────────────────────────────────
 
     /// Append `FOR UPDATE` — prevents concurrent modifications (pessimistic lock).

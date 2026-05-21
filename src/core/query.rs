@@ -941,6 +941,30 @@ impl<T> QueryBuilder<T> {
         &self.conditions
     }
 
+    /// Return the table name (used by the AR ↔ DSL bridge).
+    #[cfg(all(feature = "active", feature = "query"))]
+    pub fn table_name_str(&self) -> &str {
+        &self.table
+    }
+
+    /// Return the ORDER BY clauses (used by the AR ↔ DSL bridge).
+    #[cfg(all(feature = "active", feature = "query"))]
+    pub fn order_clauses(&self) -> &[(String, OrderDir)] {
+        &self.order
+    }
+
+    /// Return the LIMIT value (used by the AR ↔ DSL bridge).
+    #[cfg(all(feature = "active", feature = "query"))]
+    pub fn limit_value(&self) -> Option<usize> {
+        self.limit_val
+    }
+
+    /// Return the OFFSET value (used by the AR ↔ DSL bridge).
+    #[cfg(all(feature = "active", feature = "query"))]
+    pub fn offset_value(&self) -> Option<usize> {
+        self.offset_val
+    }
+
     pub fn to_where_clause(&self) -> (String, Vec<SqlValue>) {
         let mut params = Vec::new();
         let clause = self.build_where_dialect(Dialect::Postgres, &mut params);

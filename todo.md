@@ -204,14 +204,15 @@ Feature-matrix spot-check passes for all feature combinations.
 
 ---
 
-## Phase 33 — Active Record ↔ DSL Bridge (approved 2026-05-21)
+## ✅ Phase 33 — Active Record ↔ DSL Bridge (COMPLETE as of 2026-05-21)
 
-- [ ] `ModelQuery::and_expr(expr: Expr)` — inject a typed `Expr` into an Active Record chain
-- [ ] `ModelQuery::or_expr(expr: Expr)` — OR variant
-- [ ] `ModelQuery::into_dsl() -> SelectBuilder` — convert to a DSL `SelectBuilder`
-- [ ] Feature-gate: only available when both `active` + `query` features are enabled
-- [ ] Tests: round-trip AR → DSL produces identical SQL
-- [ ] Update `docs/guides/active-record.md` with bridge examples
+- [x] `ModelQuery::and_expr(expr: Expr)` — inject a typed `Expr` into an Active Record chain
+- [x] `ModelQuery::or_expr(expr: Expr)` — OR variant
+- [x] `ModelQuery::into_dsl() -> SelectBuilder` — convert to a DSL `SelectBuilder`
+- [x] `src/orm/bridge.rs` — `expr_to_condition()`, `condition_to_expr()`, `model_query_into_select()`
+- [x] Feature-gate: only available when both `active` + `query` features are enabled
+- [x] Tests: 7 unit tests covering eq/and/or/in roundtrips and into_dsl table/condition/pagination preservation
+- [x] Update `docs/api/orm.md` with bridge examples
 
 ---
 

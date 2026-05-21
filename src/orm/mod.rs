@@ -14,6 +14,10 @@ pub mod scopes;
 #[cfg(all(feature = "active", feature = "postgres"))]
 pub mod model_query;
 
+// AR ↔ DSL bridge — requires both `active` and `query`.
+#[cfg(all(feature = "active", feature = "query"))]
+pub mod bridge;
+
 #[cfg(all(feature = "active", feature = "postgres"))]
 pub mod morph;
 

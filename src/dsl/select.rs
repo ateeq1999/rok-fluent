@@ -49,7 +49,7 @@ pub struct Join {
 /// The FROM source for a [`SelectBuilder`]: a table name, a subquery, or a CTE name.
 #[derive(Debug, Clone)]
 enum FromSource {
-    Table(&'static str),
+    Table(String),
     Subquery { sql: String, alias: String },
     Cte(String),
 }
@@ -111,7 +111,13 @@ impl SelectBuilder {
 
     /// Set the table to select from.
     pub fn from<T: Table>(mut self, _table: T) -> Self {
-        self.from = Some(FromSource::Table(T::table_name()));
+        self.from = Some(FromSource::Table(T::table_name().to_owned()));
+        self
+    }
+
+    /// Set the table by name — used by the Active Record → DSL bridge.
+    pub fn from_table_name(mut self, name: impl Into<String>) -> Self {
+        self.from = Some(FromSource::Table(name.into()));
         self
     }
 
@@ -704,7 +710,7 @@ mod tests {
 
     fn make(table: &'static str) -> SelectBuilder {
         SelectBuilder {
-            from: Some(FromSource::Table(table)),
+            from: Some(FromSource::Table(table.to_owned())),
             columns: vec![],
             joins: vec![],
             wheres: vec![],

@@ -53,7 +53,8 @@ let users = User::query()
 | `.where_in("col", vals)` | `WHERE col IN (…)` |
 | `.where_null("col")` | `WHERE col IS NULL` |
 | `.where_not_null("col")` | `WHERE col IS NOT NULL` |
-| `.and_expr(dsl_expr)` | typed DSL `Expr` bridge — requires `query` feature |
+| `.and_expr(dsl_expr)` | typed DSL `Expr` bridge — requires `active` + `query` features |
+| `.or_expr(dsl_expr)` | OR variant of the above |
 
 ### Order / limit
 
@@ -66,13 +67,25 @@ let users = User::query()
 
 ### DSL bridge (requires `active` + `query`)
 
-```rust,no_run
+Inject typed DSL [`Expr`](crate::dsl::Expr) conditions into an AR chain, or convert
+the whole chain to a [`SelectBuilder`] for DSL-only operations:
+
+```rust,ignore
 use rok_fluent::dsl::db;
 
-let posts = Post::query()
+// Inject a typed DSL condition into an AR chain
+let posts = Post::all_query()
     .and_expr(posts::user_id.eq(42_i64).and(posts::published.eq(true)))
-    .all()
+    .get()
     .await?;
+
+// Convert an AR chain to a DSL SelectBuilder
+let sel = Post::all_query()
+    .and_where("published", true)
+    .into_dsl()
+    .inner_join(users::table, posts::user_id.eq(users::id))
+    .select([users::name, posts::title]);
+let rows = sel.fetch_all::<PostWithAuthor>(&pool).await?;
 ```
 
 ---
