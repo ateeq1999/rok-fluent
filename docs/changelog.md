@@ -7,6 +7,12 @@ conventions. Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+<!-- No unreleased changes yet -->
+
+---
+
+## [0.4.1] — 2026-05-21
+
 ### Added
 
 - **`TransactionService`** — `TransactionService::begin()`, `TxCtx::savepoint/rollback_to/release`, pool-free CRUD on `&mut Transaction`. See [transactions guide](guides/transactions.md).
