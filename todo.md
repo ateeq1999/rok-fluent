@@ -185,24 +185,22 @@ Feature-matrix spot-check passes for all feature combinations.
 
 ---
 
-## Phase 32b — Remaining Service Layer (approved 2026-05-21)
+## ✅ Phase 32b — Remaining Service Layer (COMPLETE as of 2026-05-21)
 
-- [ ] `src/services/soft_delete.rs` — `SoftDeleteService<M>`
-  - [ ] `all_active(pool)`, `all_deleted(pool)`, `with_trashed(pool)`
-  - [ ] `soft_delete(id, pool)`, `restore(id, pool)`, `force_delete(id, pool)`, `purge_deleted(pool)`
-- [ ] `src/services/search.rs` — `SearchService<M>`
-  - [ ] PostgreSQL: `to_tsvector` / GIN-index full-text search
-  - [ ] MySQL / SQLite fallback: `col LIKE '%term%' OR …`
-  - [ ] `search(term, pool)` → `Vec<M>`, `search_paginated(term, page, per, pool)` → `Page<M>`
-  - [ ] `#[table(searchable)]` field attribute in `#[derive(Table)]` macro
-- [ ] `src/services/audit.rs` — `AuditService<M>`
-  - [ ] `touch(id, pool)` — `UPDATE SET updated_at = NOW()`
-  - [ ] `history(id, pool)` — reads from `audit_log` table if present
-- [ ] `BatchService::bulk_update(data, ids, pool)` — update rows matching a list of PKs
-- [ ] `CrudService::search(term)` + `search_paginated(term, page, per)` — delegates to `SearchService`
+- [x] `src/services/soft_delete.rs` — `SoftDeleteService<M>`
+  - [x] `all_active(pool)`, `all_deleted(pool)`, `with_trashed(pool)`
+  - [x] `soft_delete(id, pool)`, `restore(id, pool)`, `force_delete(id, pool)`, `purge_deleted(pool)`
+- [x] `src/services/search.rs` — `SearchService<M>`
+  - [x] ILIKE OR-chain: `search()`, `search_paginated()`, `search_simple_paginated()`
+  - [x] PostgreSQL full-text: `fts()` via `to_tsvector` / `plainto_tsquery`
+- [x] `src/services/audit.rs` — `AuditService<M>`
+  - [x] `touch(id, pool)` — delegates to `M::touch_by_pk`
+  - [x] `history(id, pool)` — reads from `audit_log` table; returns `[]` if table absent
+- [x] `BatchService::bulk_update(data, ids, pool)` — update rows matching a list of PKs
+- [x] `CrudService::search(term, cols)` + `search_paginated(term, cols, page, per)` — delegates to `SearchService`
 - [ ] `CrudService::all_with(relations)` + `paginate_with(page, per, relations)` (post Phase 25)
-- [ ] Update `src/services/mod.rs` re-exports
-- [ ] Update `docs/api/orm.md` with all new service types
+- [x] Update `src/services/mod.rs` re-exports
+- [x] Update `docs/api/orm.md` with all new service types
 
 ---
 

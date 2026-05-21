@@ -169,4 +169,23 @@ where
     ) -> Result<M, sqlx::Error> {
         M::upsert_returning(&self.pool, data, &[unique_col]).await
     }
+
+    // ── Search ────────────────────────────────────────────────────────────────
+
+    /// Return all rows where any of `cols` matches `term` via `ILIKE '%term%'`.
+    pub async fn search(&self, term: &str, cols: &[&str]) -> Result<Vec<M>, sqlx::Error> {
+        super::search::SearchService::<M>::search(term, cols, &self.pool).await
+    }
+
+    /// Offset-paginated search with total-count query.
+    pub async fn search_paginated(
+        &self,
+        term: &str,
+        cols: &[&str],
+        page: u32,
+        per_page: u32,
+    ) -> Result<Page<M>, sqlx::Error> {
+        super::search::SearchService::<M>::search_paginated(term, cols, page, per_page, &self.pool)
+            .await
+    }
 }

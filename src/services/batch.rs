@@ -57,4 +57,20 @@ impl<M: PgModel> BatchService<M> {
         }
         M::delete_where(pool, builder).await
     }
+
+    /// Update `data` columns on all rows whose primary key is in `ids`.
+    ///
+    /// Returns the total number of rows affected.
+    pub async fn bulk_update(
+        data: &[(&str, SqlValue)],
+        ids: impl IntoIterator<Item = impl Into<SqlValue>>,
+        pool: &sqlx::PgPool,
+    ) -> Result<u64, sqlx::Error> {
+        let id_vals: Vec<SqlValue> = ids.into_iter().map(Into::into).collect();
+        if id_vals.is_empty() {
+            return Ok(0);
+        }
+        let builder = M::query().where_in(M::primary_key(), id_vals);
+        M::update_where(pool, builder, data).await
+    }
 }

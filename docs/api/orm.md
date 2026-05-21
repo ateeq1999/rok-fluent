@@ -272,6 +272,151 @@ let projects = through_query::<User, Team, Project>(
 
 ---
 
+## Service Layer (`rok_fluent::services`) — features: `active` + `postgres`
+
+Pre-built service types that sit above Active Record and own a `PgPool` or accept one per call.
+
+### `CrudService<M>`
+
+Pool-owning CRUD wrapper. All common read/write/paginate/search operations in one struct.
+
+```rust,ignore
+let svc = CrudService::<User>::new(pool.clone());
+
+// Read
+let all   = svc.all().await?;
+let user  = svc.find(42_i64).await?;           // Option<User>
+let user  = svc.find_or_fail(42_i64).await?;   // RowNotFound if missing
+let n     = svc.count().await?;
+let exists = svc.exists(42_i64).await?;
+
+// Write
+let user  = svc.create(&[("name", "Alice".into()), ("email", "a@example.com".into())]).await?;
+svc.update(42_i64, &[("name", "Bob".into())]).await?;
+svc.delete(42_i64).await?;
+svc.soft_delete(42_i64).await?;
+svc.restore(42_i64).await?;
+
+// Pagination
+let page  = svc.paginate(1, 25).await?;
+let page  = svc.simple_paginate(1, 25).await?;
+let page  = svc.cursor_paginate("id", None, 25).await?;
+
+// Bulk
+svc.bulk_create(&[vec![("name", "X".into())], vec![("name", "Y".into())]]).await?;
+svc.delete_where(&[("active", false.into())]).await?;
+let user  = svc.upsert_by("email", &[("email", "a@example.com".into())]).await?;
+
+// Search
+let hits  = svc.search("alice", &["name", "email"]).await?;
+let page  = svc.search_paginated("alice", &["name", "email"], 1, 25).await?;
+```
+
+### `BatchService<M>`
+
+Stateless multi-row operations — pass the pool each call.
+
+```rust,ignore
+// Bulk insert
+BatchService::<User>::bulk_insert(&rows, &pool).await?;
+BatchService::<User>::bulk_insert_chunked(&rows, 500, &pool).await?;
+
+// Upsert by unique key
+BatchService::<User>::bulk_upsert_by("email", &rows, &pool).await?;
+
+// Update a set of IDs
+BatchService::<User>::bulk_update(&[("active", false.into())], &[1_i64, 2, 3], &pool).await?;
+
+// Delete where
+BatchService::<User>::delete_where(&[("role", "guest".into())], &pool).await?;
+```
+
+### `FilterBuilder<M>`
+
+Composable, reusable WHERE clause sets. Build filters separately from execution.
+
+```rust,ignore
+let mut fb = FilterBuilder::<User>::new();
+fb.eq("active", true);
+fb.like("email", "%@example.com");
+
+let query = fb.apply(User::query());
+let users: Vec<User> = query.all().await?;
+```
+
+### `SortBuilder<M>`
+
+Whitelist-validated user-driven sorting — safe for accepting sort parameters from HTTP requests.
+
+```rust,ignore
+let sb = SortBuilder::<User>::new(&["name", "created_at", "email"]);
+let query = sb.apply(User::query(), "created_at", "desc");
+let users = query.all().await?;
+// Silently falls back to no-op for unknown columns.
+```
+
+### `SoftDeleteService<M>`
+
+Scoped operations for models with a `deleted_at` column.
+
+```rust,ignore
+let active  = SoftDeleteService::<Post>::all_active(&pool).await?;
+let deleted = SoftDeleteService::<Post>::all_deleted(&pool).await?;
+let all     = SoftDeleteService::<Post>::with_trashed(&pool).await?;
+
+SoftDeleteService::<Post>::soft_delete(42_i64, &pool).await?;
+SoftDeleteService::<Post>::restore(42_i64, &pool).await?;
+SoftDeleteService::<Post>::force_delete(42_i64, &pool).await?;
+
+// Hard-delete every row with a non-NULL deleted_at
+let purged = SoftDeleteService::<Post>::purge_deleted(&pool).await?;
+```
+
+> Methods gracefully no-op (empty Vec / 0 rows) when the model has no `deleted_at` column.
+
+### `SearchService<M>`
+
+ILIKE and full-text search across declared columns.
+
+```rust,ignore
+// ILIKE '%alice%' on name OR email
+let hits = SearchService::<User>::search("alice", &["name", "email"], &pool).await?;
+
+// With offset pagination + COUNT(*)
+let page = SearchService::<User>::search_paginated("alice", &["name", "email"], 1, 25, &pool).await?;
+
+// Simple pagination (no COUNT)
+let page = SearchService::<User>::search_simple_paginated("alice", &["name", "email"], 1, 25, &pool).await?;
+
+// PostgreSQL full-text search (GIN index recommended)
+// Renders: WHERE to_tsvector('english', name || ' ' || bio) @@ plainto_tsquery('english', $1)
+let hits = SearchService::<User>::fts("alice", &["name", "bio"], &pool).await?;
+```
+
+### `AuditService<M>`
+
+Timestamp helpers and audit log queries for models with `created_at` / `updated_at`.
+
+```rust,ignore
+// Set updated_at = NOW() for the row with pk = 42
+AuditService::<Post>::touch(42_i64, &pool).await?;
+
+// Query the audit_log table (returns [] gracefully if the table doesn't exist)
+let entries: Vec<AuditEntry> = AuditService::<Post>::history(42_i64, &pool).await?;
+for e in &entries {
+    println!("{} {} at {}", e.operation, e.record_id, e.changed_at);
+}
+```
+
+`AuditEntry` fields: `table_name`, `record_id`, `operation` (`INSERT`/`UPDATE`/`DELETE`),
+`old_data: Option<serde_json::Value>`, `new_data: Option<serde_json::Value>`,
+`changed_at: chrono::DateTime<Utc>`.
+
+Requires an `audit_log` table with columns:
+`table_name TEXT, record_id TEXT, operation TEXT, old_data JSONB, new_data JSONB, changed_at TIMESTAMPTZ`.
+
+---
+
 ## OrmLayer (`rok_fluent::orm::orm_layer`) — feature: `axum`
 
 Tower middleware that injects the pool into Axum request extensions.
