@@ -12,6 +12,8 @@
 //! | [`SearchService<M>`] | ILIKE and full-text search across declared columns |
 //! | [`TransactionService`] | Closure-based transactions with savepoints and CRUD |
 //! | [`TxCtx`] | Transaction context obtained from `TransactionService::run` |
+//! | [`LockService`] | Advisory and row-level locking (PostgreSQL) |
+//! | [`SchemaInspector`] | Query `information_schema` for column, index, FK metadata |
 //! | [`AuditService<M>`] | `touch()` and `history()` for timestamped models |
 //!
 //! # Quick start
@@ -31,6 +33,10 @@ pub mod crud;
 #[cfg(all(feature = "active", feature = "postgres"))]
 pub mod filter;
 #[cfg(all(feature = "active", feature = "postgres"))]
+pub mod lock;
+#[cfg(feature = "postgres")]
+pub mod schema_inspector;
+#[cfg(all(feature = "active", feature = "postgres"))]
 pub mod search;
 #[cfg(all(feature = "active", feature = "postgres"))]
 pub mod soft_delete;
@@ -47,6 +53,10 @@ pub use batch::BatchService;
 pub use crud::CrudService;
 #[cfg(all(feature = "active", feature = "postgres"))]
 pub use filter::FilterBuilder;
+#[cfg(all(feature = "active", feature = "postgres"))]
+pub use lock::LockService;
+#[cfg(feature = "postgres")]
+pub use schema_inspector::{ColumnInfo, ForeignKeyInfo, IndexInfo, SchemaInspector};
 #[cfg(all(feature = "active", feature = "postgres"))]
 pub use search::SearchService;
 #[cfg(all(feature = "active", feature = "postgres"))]

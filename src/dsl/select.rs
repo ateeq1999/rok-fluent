@@ -921,6 +921,8 @@ mod tests {
             limit: None,
             offset: None,
             distinct: false,
+            distinct_on: vec![],
+            lock: None,
             ctes: vec![],
             set_ops: vec![],
         }

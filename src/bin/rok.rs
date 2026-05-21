@@ -19,6 +19,7 @@ use std::path::Path;
 
 use clap::{Parser, Subcommand};
 use rok_fluent::migrate::{FileSource, MigrationRunner};
+use rok_fluent::services::SchemaInspector;
 
 // ── CLI shape ─────────────────────────────────────────────────────────────────
 
@@ -169,32 +170,6 @@ fn make_migration(name: &str, dir: &str) -> anyhow::Result<()> {
 
 // ── Schema dump ───────────────────────────────────────────────────────────────
 
-type ColRow = (String, String, Option<i32>, String, Option<String>);
-
-fn pg_type_str(udt_name: &str, char_max: Option<i32>) -> String {
-    match udt_name {
-        "int8" | "bigserial" => "BIGINT".into(),
-        "int4" | "serial" => "INTEGER".into(),
-        "int2" | "smallserial" => "SMALLINT".into(),
-        "float8" => "DOUBLE PRECISION".into(),
-        "float4" => "REAL".into(),
-        "bool" => "BOOLEAN".into(),
-        "text" => "TEXT".into(),
-        "varchar" => char_max.map_or("VARCHAR".into(), |n| format!("VARCHAR({n})")),
-        "bpchar" => char_max.map_or("CHAR".into(), |n| format!("CHAR({n})")),
-        "uuid" => "UUID".into(),
-        "jsonb" => "JSONB".into(),
-        "json" => "JSON".into(),
-        "timestamptz" => "TIMESTAMP WITH TIME ZONE".into(),
-        "timestamp" => "TIMESTAMP".into(),
-        "date" => "DATE".into(),
-        "time" => "TIME".into(),
-        "bytea" => "BYTEA".into(),
-        "numeric" => "NUMERIC".into(),
-        other => other.to_uppercase(),
-    }
-}
-
 async fn schema_dump(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     let tables: Vec<(String,)> = sqlx::query_as(
         "SELECT table_name FROM information_schema.tables \
@@ -212,55 +187,40 @@ async fn schema_dump(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     println!("-- rok db schema dump  (approximate DDL — not for round-trip use)");
 
     for (table,) in &tables {
-        // Columns
-        let cols: Vec<ColRow> = sqlx::query_as(
-            "SELECT column_name, udt_name, character_maximum_length, is_nullable, column_default \
-                 FROM information_schema.columns \
-                 WHERE table_schema = 'public' AND table_name = $1 \
-                 ORDER BY ordinal_position",
-        )
-        .bind(table)
-        .fetch_all(pool)
-        .await?;
+        let cols = SchemaInspector::columns(table, pool).await?;
 
-        // PK columns
-        let pk_cols: Vec<(String,)> = sqlx::query_as(
-            "SELECT kcu.column_name \
-             FROM information_schema.table_constraints tc \
-             JOIN information_schema.key_column_usage kcu \
-               ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema \
-             WHERE tc.table_schema = 'public' AND tc.table_name = $1 \
-               AND tc.constraint_type = 'PRIMARY KEY' \
-             ORDER BY kcu.ordinal_position",
-        )
-        .bind(table)
-        .fetch_all(pool)
-        .await?;
-        let pk_set: Vec<&str> = pk_cols.iter().map(|(c,)| c.as_str()).collect();
+        let pk_cols: Vec<&str> = cols
+            .iter()
+            .filter(|c| c.is_pk)
+            .map(|c| c.name.as_str())
+            .collect();
 
         println!("\nCREATE TABLE \"{table}\" (");
         let n = cols.len();
-        for (i, (col, udt, char_max, nullable, default)) in cols.iter().enumerate() {
-            let type_s = pg_type_str(udt, *char_max);
-            let null_s = if nullable == "NO" { " NOT NULL" } else { "" };
-            let def_s = default
-                .as_deref()
-                .map(|d| format!(" DEFAULT {d}"))
-                .unwrap_or_default();
-            let pk_s = if pk_set.len() == 1 && pk_set.contains(&col.as_str()) {
+        for (i, col) in cols.iter().enumerate() {
+            let pk_s = if pk_cols.len() == 1 && pk_cols.contains(&col.name.as_str()) {
                 " PRIMARY KEY"
             } else {
                 ""
             };
-            let comma = if i + 1 < n || pk_set.len() > 1 {
+            let null_s = if col.nullable { "" } else { " NOT NULL" };
+            let def_s = col
+                .default
+                .as_deref()
+                .map(|d| format!(" DEFAULT {d}"))
+                .unwrap_or_default();
+            let comma = if i + 1 < n || pk_cols.len() > 1 {
                 ","
             } else {
                 ""
             };
-            println!("    \"{col}\" {type_s}{null_s}{def_s}{pk_s}{comma}");
+            println!(
+                "    \"{}\" {}{}{}{}{}",
+                col.name, col.data_type, null_s, def_s, pk_s, comma
+            );
         }
-        if pk_set.len() > 1 {
-            let pks = pk_set
+        if pk_cols.len() > 1 {
+            let pks = pk_cols
                 .iter()
                 .map(|c| format!("\"{c}\""))
                 .collect::<Vec<_>>()
