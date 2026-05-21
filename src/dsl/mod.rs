@@ -42,6 +42,7 @@
 pub mod column;
 pub mod db;
 pub mod expr;
+pub mod loaded;
 pub mod table;
 
 mod delete;
@@ -49,11 +50,12 @@ mod insert;
 mod select;
 mod update;
 
-pub use column::{AggExpr, Column, NullsOrder, OrderDir, OrderExpr};
+pub use column::{AggExpr, Column, FnExpr, NullsOrder, OrderDir, OrderExpr};
 pub use db::{delete_from, insert_into, select, update};
 pub use delete::DeleteBuilder;
-pub use expr::Expr;
+pub use expr::{CaseExpr, Expr};
 pub use insert::InsertBuilder;
+pub use loaded::Loaded;
 pub use select::{Join, JoinKind, SelectBuilder};
 pub use table::Table;
 pub use update::UpdateBuilder;

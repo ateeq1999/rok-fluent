@@ -56,6 +56,16 @@ pub enum Expr {
     Not(Box<Expr>),
     /// Raw SQL fragment (no parameter binding).
     Raw(String),
+    /// `EXISTS (subquery_sql)` — no parameter binding; embed params in the raw SQL.
+    Exists(String),
+    /// `NOT EXISTS (subquery_sql)`
+    NotExists(String),
+    /// `col IN (subquery_sql)` — no parameter binding.
+    InSubquery(String, String),
+    /// `col NOT IN (subquery_sql)`
+    NotInSubquery(String, String),
+    /// `CASE WHEN cond THEN val … [ELSE default] END` — see [`CaseExpr`].
+    Case(CaseExpr),
 }
 
 impl std::ops::Not for Expr {
@@ -83,6 +93,32 @@ impl Expr {
     /// Use only when no typed alternative exists.
     pub fn raw(sql: impl Into<String>) -> Expr {
         Expr::Raw(sql.into())
+    }
+
+    /// `EXISTS (subquery_sql)` — the SQL is inserted verbatim.
+    ///
+    /// ```rust,ignore
+    /// .where_(Expr::exists("SELECT 1 FROM posts WHERE posts.user_id = users.id"))
+    /// ```
+    pub fn exists(subquery_sql: impl Into<String>) -> Expr {
+        Expr::Exists(subquery_sql.into())
+    }
+
+    /// `NOT EXISTS (subquery_sql)`
+    pub fn not_exists(subquery_sql: impl Into<String>) -> Expr {
+        Expr::NotExists(subquery_sql.into())
+    }
+
+    /// Start building a `CASE WHEN … THEN … [ELSE …] END` expression.
+    ///
+    /// ```rust,ignore
+    /// Expr::case()
+    ///     .when(User::SCORE.gte(90_i64), "A")
+    ///     .when(User::SCORE.gte(80_i64), "B")
+    ///     .otherwise("C")
+    /// ```
+    pub fn case() -> CaseExpr {
+        CaseExpr::new()
     }
 
     /// Render the expression to a parameterised SQL fragment.
@@ -212,6 +248,16 @@ impl Expr {
             }
 
             Expr::Raw(sql) => (sql.clone(), vec![]),
+
+            Expr::Exists(sub) => (format!("EXISTS ({sub})"), vec![]),
+            Expr::NotExists(sub) => (format!("NOT EXISTS ({sub})"), vec![]),
+            Expr::InSubquery(col, sub) => (format!("{col} IN ({sub})"), vec![]),
+            Expr::NotInSubquery(col, sub) => (format!("{col} NOT IN ({sub})"), vec![]),
+
+            Expr::Case(case_expr) => {
+                let (s, p) = case_expr.render(offset, ph);
+                (s, p)
+            }
         }
     }
 
@@ -229,6 +275,84 @@ impl Expr {
             format!("${offset}")
         };
         (format!("{col} {op} {placeholder}"), vec![val.clone()])
+    }
+}
+
+// ── CaseExpr ──────────────────────────────────────────────────────────────────
+
+/// A `CASE WHEN … THEN … ELSE … END` expression.
+///
+/// Created by [`Expr::case()`].
+///
+/// ```rust,ignore
+/// let grade = Expr::case()
+///     .when(User::SCORE.gte(90_i64), "A")
+///     .when(User::SCORE.gte(80_i64), "B")
+///     .otherwise("C");
+/// ```
+#[derive(Debug, Clone)]
+pub struct CaseExpr {
+    branches: Vec<(Expr, SqlValue)>,
+    else_val: Option<SqlValue>,
+}
+
+impl CaseExpr {
+    pub(crate) fn new() -> Self {
+        Self {
+            branches: Vec::new(),
+            else_val: None,
+        }
+    }
+
+    /// Add a `WHEN condition THEN value` branch.
+    #[must_use]
+    pub fn when(mut self, cond: Expr, then: impl Into<SqlValue>) -> Self {
+        self.branches.push((cond, then.into()));
+        self
+    }
+
+    /// Set the `ELSE value` clause and complete the expression.
+    pub fn otherwise(mut self, val: impl Into<SqlValue>) -> Expr {
+        self.else_val = Some(val.into());
+        Expr::Case(self)
+    }
+
+    /// Complete the expression without an `ELSE` clause.
+    pub fn end(self) -> Expr {
+        Expr::Case(self)
+    }
+
+    pub(crate) fn render(&self, mut offset: usize, ph: char) -> (String, Vec<SqlValue>) {
+        let mut sql = "CASE".to_string();
+        let mut params: Vec<SqlValue> = Vec::new();
+
+        for (cond, val) in &self.branches {
+            let (cond_sql, cond_params) = cond.render(offset, ph);
+            offset += cond_params.len();
+            params.extend(cond_params);
+
+            let val_ph = if ph == '?' {
+                "?".to_string()
+            } else {
+                format!("${offset}")
+            };
+            offset += 1;
+            params.push(val.clone());
+            sql.push_str(&format!(" WHEN {cond_sql} THEN {val_ph}"));
+        }
+
+        if let Some(else_val) = &self.else_val {
+            let else_ph = if ph == '?' {
+                "?".to_string()
+            } else {
+                format!("${offset}")
+            };
+            params.push(else_val.clone());
+            sql.push_str(&format!(" ELSE {else_ph}"));
+        }
+
+        sql.push_str(" END");
+        (sql, params)
     }
 }
 

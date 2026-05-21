@@ -9,10 +9,4 @@ pub trait Table: Send + Sync + 'static {
     fn table_name() -> &'static str
     where
         Self: Sized;
-
-    /// Instance accessor returning the same table name.
-    ///
-    /// Used internally by builders that receive `impl Table` and need to call
-    /// through a value rather than through a type parameter.
-    fn name(&self) -> &'static str;
 }

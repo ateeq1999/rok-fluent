@@ -46,10 +46,34 @@ pub struct Join {
 ///     .fetch_all::<User>(&pool)
 ///     .await?;
 /// ```
+/// The FROM source for a [`SelectBuilder`]: a table name, a subquery, or a CTE name.
+#[derive(Debug, Clone)]
+enum FromSource {
+    Table(&'static str),
+    Subquery { sql: String, alias: String },
+    Cte(String),
+}
+
+/// A CTE (Common Table Expression) definition.
+#[derive(Debug, Clone)]
+pub struct Cte {
+    pub(crate) name: String,
+    pub(crate) sql: String,
+}
+
+/// A set operation combining two queries.
+#[derive(Debug, Clone)]
+enum SetOp {
+    Union(String),
+    UnionAll(String),
+    Intersect(String),
+    Except(String),
+}
+
 #[derive(Debug)]
 #[must_use]
 pub struct SelectBuilder {
-    table: Option<&'static str>,
+    from: Option<FromSource>,
     columns: Vec<String>,
     joins: Vec<Join>,
     wheres: Vec<Expr>,
@@ -60,12 +84,14 @@ pub struct SelectBuilder {
     limit: Option<u64>,
     offset: Option<u64>,
     distinct: bool,
+    ctes: Vec<Cte>,
+    set_ops: Vec<SetOp>,
 }
 
 impl SelectBuilder {
     pub(crate) fn new() -> Self {
         Self {
-            table: None,
+            from: None,
             columns: Vec::new(),
             joins: Vec::new(),
             wheres: Vec::new(),
@@ -76,6 +102,8 @@ impl SelectBuilder {
             limit: None,
             offset: None,
             distinct: false,
+            ctes: Vec::new(),
+            set_ops: Vec::new(),
         }
     }
 
@@ -83,7 +111,51 @@ impl SelectBuilder {
 
     /// Set the table to select from.
     pub fn from<T: Table>(mut self, _table: T) -> Self {
-        self.table = Some(T::table_name());
+        self.from = Some(FromSource::Table(T::table_name()));
+        self
+    }
+
+    /// Use a subquery as the FROM source: `SELECT … FROM (subquery) AS alias`.
+    ///
+    /// ```rust,ignore
+    /// db::select()
+    ///     .from_subquery(
+    ///         db::select().from(User::table()).where_(User::ACTIVE.eq(true)),
+    ///         "active_users",
+    ///     )
+    ///     .fetch_all::<ActiveUser>(&pool).await?;
+    /// ```
+    pub fn from_subquery(mut self, subquery: SelectBuilder, alias: impl Into<String>) -> Self {
+        let (sql, _params) = subquery.to_sql_pg();
+        self.from = Some(FromSource::Subquery {
+            sql,
+            alias: alias.into(),
+        });
+        self
+    }
+
+    /// Select from a named CTE defined via `.with_cte()`.
+    pub fn from_cte(mut self, name: impl Into<String>) -> Self {
+        self.from = Some(FromSource::Cte(name.into()));
+        self
+    }
+
+    /// Add a CTE (`WITH name AS (subquery) …`).
+    ///
+    /// ```rust,ignore
+    /// db::select()
+    ///     .with_cte("top_users",
+    ///         db::select().from(User::table()).order_by(User::SCORE.desc()).limit(100)
+    ///     )
+    ///     .from_cte("top_users")
+    ///     .fetch_all::<User>(&pool).await?;
+    /// ```
+    pub fn with_cte(mut self, name: impl Into<String>, query: SelectBuilder) -> Self {
+        let (sql, _params) = query.to_sql_pg();
+        self.ctes.push(Cte {
+            name: name.into(),
+            sql,
+        });
         self
     }
 
@@ -132,40 +204,40 @@ impl SelectBuilder {
     // ── Joins ─────────────────────────────────────────────────────────────────
 
     /// `INNER JOIN table ON expr`
-    pub fn inner_join(mut self, table: impl Table, on: Expr) -> Self {
+    pub fn inner_join<TJ: Table>(mut self, _table: TJ, on: Expr) -> Self {
         self.joins.push(Join {
             kind: JoinKind::Inner,
-            table: table.name().to_owned(),
+            table: TJ::table_name().to_owned(),
             on: Some(on),
         });
         self
     }
 
     /// `LEFT JOIN table ON expr`
-    pub fn left_join(mut self, table: impl Table, on: Expr) -> Self {
+    pub fn left_join<TJ: Table>(mut self, _table: TJ, on: Expr) -> Self {
         self.joins.push(Join {
             kind: JoinKind::Left,
-            table: table.name().to_owned(),
+            table: TJ::table_name().to_owned(),
             on: Some(on),
         });
         self
     }
 
     /// `RIGHT JOIN table ON expr`
-    pub fn right_join(mut self, table: impl Table, on: Expr) -> Self {
+    pub fn right_join<TJ: Table>(mut self, _table: TJ, on: Expr) -> Self {
         self.joins.push(Join {
             kind: JoinKind::Right,
-            table: table.name().to_owned(),
+            table: TJ::table_name().to_owned(),
             on: Some(on),
         });
         self
     }
 
     /// `CROSS JOIN table` (no ON clause)
-    pub fn cross_join(mut self, table: impl Table) -> Self {
+    pub fn cross_join<TJ: Table>(mut self, _table: TJ) -> Self {
         self.joins.push(Join {
             kind: JoinKind::Cross,
-            table: table.name().to_owned(),
+            table: TJ::table_name().to_owned(),
             on: None,
         });
         self
@@ -220,15 +292,37 @@ impl SelectBuilder {
         self.render('?')
     }
 
+    fn build_from_clause(&self) -> String {
+        match &self.from {
+            None => "\"unknown\"".to_string(),
+            Some(FromSource::Table(t)) => format!("\"{t}\""),
+            Some(FromSource::Subquery { sql, alias }) => format!("({sql}) AS \"{alias}\""),
+            Some(FromSource::Cte(name)) => format!("\"{name}\""),
+        }
+    }
+
+    fn cte_prefix(&self) -> String {
+        if self.ctes.is_empty() {
+            return String::new();
+        }
+        let parts: Vec<String> = self
+            .ctes
+            .iter()
+            .map(|c| format!("\"{}\" AS ({})", c.name, c.sql))
+            .collect();
+        format!("WITH {} ", parts.join(", "))
+    }
+
     fn render(&self, ph: char) -> (String, Vec<SqlValue>) {
-        let table = self.table.unwrap_or("unknown");
         let cols = if self.columns.is_empty() {
             "*".to_string()
         } else {
             self.columns.join(", ")
         };
         let distinct = if self.distinct { "DISTINCT " } else { "" };
-        let mut sql = format!("SELECT {distinct}{cols} FROM \"{table}\"");
+        let from = self.build_from_clause();
+        let cte_pfx = self.cte_prefix();
+        let mut sql = format!("{cte_pfx}SELECT {distinct}{cols} FROM {from}");
         let mut params: Vec<SqlValue> = Vec::new();
 
         // JOINs
@@ -320,13 +414,24 @@ impl SelectBuilder {
             sql.push_str(&format!(" OFFSET {n}"));
         }
 
+        // Set operations
+        for op in &self.set_ops {
+            match op {
+                SetOp::Union(s) => sql.push_str(&format!(" UNION ({s})")),
+                SetOp::UnionAll(s) => sql.push_str(&format!(" UNION ALL ({s})")),
+                SetOp::Intersect(s) => sql.push_str(&format!(" INTERSECT ({s})")),
+                SetOp::Except(s) => sql.push_str(&format!(" EXCEPT ({s})")),
+            }
+        }
+
         (sql, params)
     }
 
     /// Build a COUNT(*) SQL string from the current WHERE clauses.
     fn count_sql(&self, ph: char) -> (String, Vec<SqlValue>) {
-        let table = self.table.unwrap_or("unknown");
-        let mut sql = format!("SELECT COUNT(*) FROM \"{table}\"");
+        let from = self.build_from_clause();
+        let cte_pfx = self.cte_prefix();
+        let mut sql = format!("{cte_pfx}SELECT COUNT(*) FROM {from}");
         let mut params: Vec<SqlValue> = Vec::new();
 
         for join in &self.joins {
@@ -363,6 +468,36 @@ impl SelectBuilder {
         }
 
         (sql, params)
+    }
+
+    // ── Set operations ────────────────────────────────────────────────────────
+
+    /// `… UNION (other_query)` — duplicate rows removed.
+    pub fn union(mut self, other: SelectBuilder) -> Self {
+        let (sql, _) = other.to_sql_pg();
+        self.set_ops.push(SetOp::Union(sql));
+        self
+    }
+
+    /// `… UNION ALL (other_query)` — duplicate rows kept.
+    pub fn union_all(mut self, other: SelectBuilder) -> Self {
+        let (sql, _) = other.to_sql_pg();
+        self.set_ops.push(SetOp::UnionAll(sql));
+        self
+    }
+
+    /// `… INTERSECT (other_query)`
+    pub fn intersect(mut self, other: SelectBuilder) -> Self {
+        let (sql, _) = other.to_sql_pg();
+        self.set_ops.push(SetOp::Intersect(sql));
+        self
+    }
+
+    /// `… EXCEPT (other_query)`
+    pub fn except(mut self, other: SelectBuilder) -> Self {
+        let (sql, _) = other.to_sql_pg();
+        self.set_ops.push(SetOp::Except(sql));
+        self
     }
 }
 
@@ -569,7 +704,7 @@ mod tests {
 
     fn make(table: &'static str) -> SelectBuilder {
         SelectBuilder {
-            table: Some(table),
+            from: Some(FromSource::Table(table)),
             columns: vec![],
             joins: vec![],
             wheres: vec![],
@@ -580,6 +715,8 @@ mod tests {
             limit: None,
             offset: None,
             distinct: false,
+            ctes: vec![],
+            set_ops: vec![],
         }
     }
 

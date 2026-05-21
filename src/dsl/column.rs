@@ -199,6 +199,76 @@ impl<T, V> Column<T, V> {
     pub fn eq_col<T2, V2>(self, other: Column<T2, V2>) -> Expr {
         Expr::ColEq(self.qualified(), other.qualified())
     }
+
+    /// `column IN (subquery_sql)` — subquery inserted verbatim.
+    ///
+    /// ```rust,ignore
+    /// User::ID.in_subquery("SELECT user_id FROM orders WHERE total > 100")
+    /// ```
+    pub fn in_subquery(self, subquery_sql: impl Into<String>) -> Expr {
+        Expr::InSubquery(self.qualified(), subquery_sql.into())
+    }
+
+    /// `column NOT IN (subquery_sql)`
+    pub fn not_in_subquery(self, subquery_sql: impl Into<String>) -> Expr {
+        Expr::NotInSubquery(self.qualified(), subquery_sql.into())
+    }
+}
+
+// ── SQL function expressions ──────────────────────────────────────────────────
+
+impl<T, V> Column<T, V> {
+    /// `LOWER(column)` — rendered as a raw expression string.
+    pub fn lower(self) -> FnExpr {
+        FnExpr::new(format!("LOWER({})", self.qualified()))
+    }
+
+    /// `UPPER(column)`
+    pub fn upper(self) -> FnExpr {
+        FnExpr::new(format!("UPPER({})", self.qualified()))
+    }
+
+    /// `LENGTH(column)` — character length.
+    pub fn length(self) -> FnExpr {
+        FnExpr::new(format!("LENGTH({})", self.qualified()))
+    }
+
+    /// `TRIM(column)`
+    pub fn trim(self) -> FnExpr {
+        FnExpr::new(format!("TRIM({})", self.qualified()))
+    }
+
+    /// `COALESCE(column, fallback_sql)` — e.g. `User::NAME.coalesce("'anonymous'")`.
+    pub fn coalesce(self, fallback_sql: impl Into<String>) -> FnExpr {
+        FnExpr::new(format!(
+            "COALESCE({}, {})",
+            self.qualified(),
+            fallback_sql.into()
+        ))
+    }
+
+    /// `CAST(column AS type_sql)` — e.g. `User::SCORE.cast_as("FLOAT")`.
+    pub fn cast_as(self, type_sql: impl Into<String>) -> FnExpr {
+        FnExpr::new(format!("CAST({} AS {})", self.qualified(), type_sql.into()))
+    }
+
+    /// `DATE_TRUNC(unit, column)` — PostgreSQL date truncation.
+    pub fn date_trunc(self, unit: impl Into<String>) -> FnExpr {
+        FnExpr::new(format!(
+            "DATE_TRUNC('{}', {})",
+            unit.into(),
+            self.qualified()
+        ))
+    }
+
+    /// `EXTRACT(part FROM column)` — e.g. `User::CREATED_AT.extract("year")`.
+    pub fn extract(self, part: impl Into<String>) -> FnExpr {
+        FnExpr::new(format!(
+            "EXTRACT({} FROM {})",
+            part.into(),
+            self.qualified()
+        ))
+    }
 }
 
 // ── Aggregate expressions (Phase 24) ─────────────────────────────────────────
@@ -347,5 +417,71 @@ impl OrderExpr {
             NullsOrder::Last => " NULLS LAST".to_string(),
         };
         format!("{} {}{}", self.col, dir, nulls)
+    }
+}
+
+// ── FnExpr ────────────────────────────────────────────────────────────────────
+
+/// A SQL function expression wrapping a column — e.g. `LOWER("users"."name")`.
+///
+/// Obtained from column function methods like `.lower()`, `.upper()`, etc.
+/// Use in `SELECT` projections via `.agg_col()` or convert to an [`Expr`] for
+/// use in `WHERE`/`HAVING` with the comparison methods below.
+#[derive(Debug, Clone)]
+pub struct FnExpr {
+    /// Pre-rendered SQL, e.g. `LOWER("users"."name")`.
+    pub(crate) sql: String,
+    /// Optional alias for projection.
+    alias: Option<String>,
+}
+
+impl FnExpr {
+    pub(crate) fn new(sql: String) -> Self {
+        Self { sql, alias: None }
+    }
+
+    /// Assign an alias: `LOWER("users"."name") AS lower_name`.
+    #[must_use]
+    pub fn alias(mut self, name: impl Into<String>) -> Self {
+        self.alias = Some(name.into());
+        self
+    }
+
+    /// Render for use in a SELECT projection.
+    pub fn to_projection_sql(&self) -> String {
+        match &self.alias {
+            Some(a) => format!("{} AS \"{}\"", self.sql, a),
+            None => self.sql.clone(),
+        }
+    }
+
+    /// `fn_expr = value`
+    pub fn eq(self, val: impl Into<crate::core::condition::SqlValue>) -> super::expr::Expr {
+        super::expr::Expr::AggCmp(self.sql, "=", val.into())
+    }
+
+    /// `fn_expr != value`
+    pub fn ne(self, val: impl Into<crate::core::condition::SqlValue>) -> super::expr::Expr {
+        super::expr::Expr::AggCmp(self.sql, "!=", val.into())
+    }
+
+    /// `fn_expr LIKE pattern`
+    pub fn like(self, pattern: impl Into<crate::core::condition::SqlValue>) -> super::expr::Expr {
+        super::expr::Expr::AggCmp(self.sql, "LIKE", pattern.into())
+    }
+
+    /// `fn_expr ILIKE pattern` — PostgreSQL case-insensitive.
+    pub fn ilike(self, pattern: impl Into<crate::core::condition::SqlValue>) -> super::expr::Expr {
+        super::expr::Expr::AggCmp(self.sql, "ILIKE", pattern.into())
+    }
+
+    /// `fn_expr > value`
+    pub fn gt(self, val: impl Into<crate::core::condition::SqlValue>) -> super::expr::Expr {
+        super::expr::Expr::AggCmp(self.sql, ">", val.into())
+    }
+
+    /// `fn_expr < value`
+    pub fn lt(self, val: impl Into<crate::core::condition::SqlValue>) -> super::expr::Expr {
+        super::expr::Expr::AggCmp(self.sql, "<", val.into())
     }
 }

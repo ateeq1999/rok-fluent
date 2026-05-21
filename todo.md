@@ -14,8 +14,7 @@ Feature-matrix spot-check passes for all feature combinations.
 
 ## Phase 13 — Tombstone Releases (deferred — publish after v0.4.0 stabilises)
 
-- [ ] Publish `rok-orm@0.3.99` with `deprecated = true` + `rok-fluent` migration note
-- [ ] Publish tombstones for `rok-orm-core`, `rok-orm-factory`, `rok-orm-migrate`
+- [ ] Publish `rok-fluent` to crates.io
 
 ---
 
@@ -128,3 +127,58 @@ Feature-matrix spot-check passes for all feature combinations.
 - [x] `SelectBuilder::group_by()`, `having()`, `agg_col()`
 - [x] `Expr::AggCmp` variant rendered in `to_sql_pg` / `to_sql_qmark`
 - [x] Re-exported: `AggExpr`, `OrderExpr`, `NullsOrder`, `OrderDir`, `Join`, `JoinKind`
+
+## ✅ Phase 25 — `Loaded<T>` Relationship Carrier (COMPLETE as of 2026-05-21)
+
+- [x] `src/dsl/loaded.rs`: `Loaded<T>` enum (`NotLoaded` / `Some(T)`)
+- [x] `Default`, `Serialize` (null when not loaded), `Deserialize` (None → NotLoaded)
+- [x] `is_loaded()`, `as_option()`, `into_option()`, `unwrap()`, `map()`
+- [x] Re-exported from `dsl::Loaded`
+
+## ✅ Phase 29 — Advanced `Expr`: CASE, EXISTS, Subqueries, Column Functions (COMPLETE as of 2026-05-21)
+
+- [x] `Expr::Exists(sql)`, `Expr::NotExists(sql)` — `EXISTS (subquery)`
+- [x] `Expr::InSubquery(col, sql)`, `Expr::NotInSubquery(col, sql)`
+- [x] `Expr::exists()`, `Expr::not_exists()` constructors
+- [x] `Expr::case()` → `CaseExpr` builder with `.when(cond, val).otherwise(val)`
+- [x] `Column::in_subquery()`, `Column::not_in_subquery()`
+- [x] `Column::lower()`, `upper()`, `length()`, `trim()`, `coalesce()`, `cast_as()`, `date_trunc()`, `extract()` → `FnExpr`
+- [x] `FnExpr` with `.alias()`, `.eq()`, `.ne()`, `.like()`, `.ilike()`, `.gt()`, `.lt()`
+- [x] Re-exported: `CaseExpr`, `FnExpr`
+
+## ✅ Phase 31 — Upsert + RETURNING on all DSL builders (COMPLETE as of 2026-05-21)
+
+- [x] `InsertBuilder::values_typed()` — typed `Column<T,V>` pairs
+- [x] `InsertBuilder::on_conflict_do_nothing()`
+- [x] `InsertBuilder::on_conflict(cols)` + `.do_update_excluded(cols)` + `.do_update_values(pairs)`
+- [x] `InsertBuilder::returning()` / `returning_cols(cols)`
+- [x] `InsertBuilder::fetch_one::<T>()` / `fetch_all::<T>()` (PostgreSQL, auto-adds RETURNING)
+- [x] `UpdateBuilder::set_col()` / `set_typed()` — typed column setters
+- [x] `UpdateBuilder::returning()` / `returning_cols(cols)`
+- [x] `UpdateBuilder::fetch_one::<T>()` / `fetch_all::<T>()` (PostgreSQL)
+
+## ✅ Phase 30 — Subqueries, CTEs, Set Operations (COMPLETE as of 2026-05-21)
+
+- [x] `SelectBuilder::from_subquery(query, alias)` — `SELECT … FROM (…) AS alias`
+- [x] `SelectBuilder::with_cte(name, query)` — `WITH name AS (…)`
+- [x] `SelectBuilder::from_cte(name)` — select from a named CTE
+- [x] CTE prefix rendered before the SELECT in `to_sql_pg()`
+- [x] `SelectBuilder::union()`, `union_all()`, `intersect()`, `except()` — set operations
+- [x] Set ops appended after LIMIT/OFFSET in rendered SQL
+
+## ✅ Phase 32 — Service Layer (COMPLETE as of 2026-05-21)
+
+- [x] `src/services/crud.rs` — `CrudService<M>`: pool-owning CRUD wrapper
+  - [x] `all()`, `find()`, `find_or_fail()`, `count()`, `exists()`, `query()`, `filter()`
+  - [x] `paginate()`, `simple_paginate()`, `cursor_paginate()` via `pool::with_pool`
+  - [x] `create()`, `update()`, `delete()`, `soft_delete()`, `restore()`
+  - [x] `bulk_create()`, `delete_where()`, `upsert_by()`
+- [x] `src/services/filter.rs` — `FilterBuilder<M>`: composable WHERE clause builder
+  - [x] `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `like`, `ilike`, `is_null`, `is_not_null`, `in_`, `not_in`
+  - [x] `apply(query) -> ModelQuery<M>`
+- [x] `src/services/sort.rs` — `SortBuilder<M>`: whitelist-validated sort builder
+  - [x] `allow()`, `apply_user_input()`, `then_by()`, `apply(query)`
+- [x] `src/services/batch.rs` — `BatchService<M>`: bulk operations
+  - [x] `bulk_insert()`, `bulk_insert_chunked()`, `bulk_upsert_by()`, `delete_where()`
+- [x] `src/services/mod.rs` — re-exports all four types
+- [x] `src/lib.rs` — `pub mod services` added

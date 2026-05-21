@@ -31,6 +31,8 @@ pub mod migrate;
 #[cfg(feature = "query")]
 pub mod dsl;
 
+pub mod services;
+
 // ── Core re-exports (always available) ───────────────────────────────────────
 
 pub use crate::core::condition::{Condition, JoinOp, OrderDir, SqlValue};
