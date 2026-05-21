@@ -1,0 +1,124 @@
+rok-fluent: Applying "How Claude Works in Large Codebases" Best Practices
+==========================================================================
+Source: https://claude.com/blog/how-claude-code-works-in-large-codebases-best-practices-and-where-to-start
+
+Status legend:  [x] done   [ ] todo   [-] optional
+
+
+1. LAYERED CLAUDE.md STRATEGY
+------------------------------
+[x] Root CLAUDE.md — quality gates, commit format, workflow order, style rules
+[x] rok-fluent-macros/CLAUDE.md — proc-macro conventions:
+      - syn/quote patterns used in this crate
+      - how to add a new #[table(...)] key (parse_nested_meta, no skip for non-relationship attrs)
+      - test pattern: #[test] fn expand_<feature>() with syn::parse_str + assert!(tokens.to_string().contains(...))
+[x] src/dsl/CLAUDE.md — DSL subsystem rules:
+      - every builder method must be #[must_use]
+      - to_sql_pg / to_sql_mysql / to_sql_sqlite must stay in sync
+      - new Expr variant → update condition.rs + expr.rs + all three sqlx/*.rs bindings
+[x] src/services/CLAUDE.md — service layer rules:
+      - services are stateless (pool passed per call) except CrudService (pool-owning)
+      - all public fns return Result<T, sqlx::Error> or crate Error type
+      - SearchService effective_cols::<M>(cols) turbofish required
+
+Action: create each file with 10-20 lines of subsystem-specific rules.
+
+
+2. .claudeignore — REDUCE NOISE
+---------------------------------
+[x] Create d:\DEV\open-source\rok-fluent\.claudeignore:
+      target/
+      docs/
+      *.lock
+      .git/
+
+Why: `cargo build` output (target/) is huge — keeps file search and @-mention results clean.
+docs/ is pure markdown, not Rust source — exclude from code search.
+Note: .claudeignore uses .gitignore syntax.
+
+
+3. HOOKS — CONSISTENT AUTOMATION
+----------------------------------
+[x] PostToolUse Write|Edit → cargo fmt (already configured)
+[x] Stop → cargo clippy (already configured)
+[x] PostToolUse Write|Edit → cargo test (add alongside fmt hook)
+    Matcher: Write|Edit
+    Command: jq -r '.tool_input.file_path // .tool_response.filePath' |
+             grep -E '\.rs$' && cargo test --workspace 2>&1 | tail -20 || true
+    Note: only fires when a .rs file is written; tail -20 keeps output brief.
+    Add to: .claude/settings.json (project-level so team shares it)
+
+
+4. SKILLS — ON-DEMAND EXPERTISE
+----------------------------------
+[x] rok-rust skill created at ~/.claude/skills/rok-rust/SKILL.md
+    Covers: phase workflow, SqlValue variants, derive cheat sheet,
+            DSL patterns, feature gating, service layer, quality gates.
+    Trigger: type /rok-rust before starting a phase or DSL work session.
+
+Complement (already installed, do not duplicate):
+  - rust-skills  — general Rust idioms, ownership, error handling
+  - feature-dev  — feature flag and phased rollout patterns
+  - code-simplifier — refactor / cleanup passes
+
+
+5. SUBAGENT DELEGATION
+------------------------
+Use Agent tool (subagent_type=Explore) for:
+  - "where is X defined?" across the whole crate    → Explore agent, quick
+  - "which files reference SqlValue::Array?"        → Explore agent, medium
+  - "audit all #[cfg(feature)] gates for gaps"      → Explore agent, very thorough
+Do NOT spawn agents for: known file reads, single-file edits, quality gate runs.
+Rule: if you can name the file, use Read/Edit directly.
+
+
+6. MEMORY HYGIENE
+------------------
+[x] MEMORY.md index exists at ~/.claude/projects/d--DEV-open-source-rok-fluent/memory/
+Save to memory only:
+  - User preferences / corrections (feedback type)
+  - Phase deadlines or external constraints (project type)
+  - Pointers to external systems (reference type)
+Do NOT save to memory:
+  - Code patterns (read the code)
+  - Phase status (read todo.md)
+  - File locations (use Glob/Grep)
+
+
+7. DRI OWNERSHIP OF CLAUDE.md
+-------------------------------
+Owner: ateg (sole contributor currently)
+Rule: after any phase that changes public API, feature flags, or workflow:
+  1. update docs/ (already enforced by hook in CLAUDE.md)
+  2. consider whether CLAUDE.md root or a subsystem CLAUDE.md needs updating
+  3. if a new "trap" was hit (e.g., turbofish required, lifetime workaround),
+     add a one-liner to the relevant subsystem CLAUDE.md so it's not rediscovered
+
+
+8. PHASED ROLLOUT CHECKLIST (per phase from todo.md)
+------------------------------------------------------
+Before starting a phase:
+  [ ] /rok-rust skill loaded (type /rok-rust)
+  [ ] Read todo.md to confirm the phase scope
+  [ ] Read relevant src/ files to understand current state
+
+During:
+  [ ] cargo fmt after each logical chunk of changes
+  [ ] cargo clippy before declaring "done"
+
+After:
+  [ ] cargo test --workspace passes
+  [ ] feature spot-checks pass (see CLAUDE.md quality gates)
+  [ ] docs/ updated (API / features / changelog as applicable)
+  [ ] todo.md phase marked complete
+  [ ] Conventional Commit created with correct type(scope): summary
+
+
+9. QUICK-REFERENCE: NEXT PHASES (from todo.md)
+------------------------------------------------
+Phase 36: rok db CLI (feature: cli, clap)
+Phase 37: Transaction service (TransactionService<M>)
+Phase 38: Lock service (LockService<M>, advisory + row-level)
+Phase 39: Schema inspection (Schema builder, table introspection)
+
+For each: read the relevant docs/api/ stub first, implement, then fill in the doc.

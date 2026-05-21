@@ -10,6 +10,13 @@
             "shell": "powershell",
             "timeout": 30,
             "statusMessage": "Formatting (cargo fmt)…"
+          },
+          {
+            "type": "command",
+            "command": "$j = $input | ConvertFrom-Json; if ($j.tool_input.file_path -like \"*.rs\") { cargo test --workspace 2>&1 | Select-Object -Last 25 }",
+            "shell": "powershell",
+            "timeout": 120,
+            "statusMessage": "Testing (cargo test)…"
           }
         ]
       }
