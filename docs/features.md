@@ -77,6 +77,13 @@ Provides:
 - **`rok_fluent::services`** — `CrudService<M>`, `FilterBuilder<M>`, `SortBuilder<M>`, `BatchService<M>`, `SoftDeleteService<M>`, `SearchService<M>`, `AuditService<M>` *(in progress)*
 - **`TransactionService`** — composable transactions with savepoints *(planned)*
 - **`LockService`** — advisory and row-level locks *(planned)*
+- **`orm::postgres::repository`** *(`postgres` + `active`)* — `Repository<M>` / DI override
+  registry: register an `Arc<dyn Repository<M>>` per model and `PgModel`'s
+  `find_by_pk`/`create`/`update_by_pk`/`delete_by_pk`/`all` transparently delegate to it.
+  See [ORM docs](api/orm.md#repository--di-override-rok_fluentormpostgresrepository--feature-active--postgres).
+
+**Extra deps:** `async-trait` 0.1 (also pulled in by `migrate`; used by `Repository<M>`'s
+`#[async_trait]` trait so it can be stored as `Arc<dyn Repository<M>>`)
 
 ```rust
 // Active Record example
@@ -174,6 +181,110 @@ rok-fluent = { version = "0.4", features = ["axum"] }
 **Extra deps:** `axum`, `tower`
 
 See [guides/axum.md](guides/axum.md).
+
+---
+
+## Validation
+
+### `validate`
+
+Integrates the [`validator`](https://docs.rs/validator) crate with
+[`Hooks`](api/orm.md#hooks-rok_fluentormhooks--feature-active--postgres-for-the-instance-methods):
+adds `impl From<validator::ValidationErrors> for OrmError`, so a model that also
+`#[derive(validator::Validate)]` with its own `#[validate(...)]` field attributes
+(`email`, `length(...)`, `range(...)`, `custom(...)`, ...) can call
+`self.validate().map_err(OrmError::from)?` inside `before_save`/`before_create`.
+rok-fluent does not parse `#[validate(...)]` attributes itself — `validator`'s own
+derive macro does that work independently.
+
+```toml
+rok-fluent = { version = "0.4", features = ["validate"] }
+```
+
+```rust,ignore
+use rok_fluent::orm::hooks::{Hooks, OrmError, OrmResult};
+use validator::Validate;
+
+#[derive(validator::Validate)]
+struct User {
+    #[validate(email)]
+    email: String,
+}
+
+impl Hooks for User {
+    fn before_save(&mut self) -> OrmResult<()> {
+        self.validate().map_err(OrmError::from)
+    }
+}
+```
+
+**Extra deps:** `validator` 0.21 (`derive` feature)
+
+See [`examples/12_validation.rs`](../examples/12_validation.rs).
+
+---
+
+## Query Result Cache
+
+### `cache`
+
+Opt-in, per-query result cache (`rok_fluent::orm::cache`) — a process-wide, TTL-based,
+table-keyed registry for read-heavy endpoints that repeat the same query. Nothing is
+cached implicitly: callers opt in per query by calling a `_cached` terminal and
+supplying a TTL; every other terminal's behavior is unchanged.
+
+```toml
+rok-fluent = { version = "0.4", features = ["cache"] }
+```
+
+Provides:
+- `orm::cache::get::<T>(key) -> Option<Arc<T>>` / `put::<T>(key, Arc<T>, ttl)` — the
+  generic get/put primitives (mirrors the `NAMED_POOLS` registry pattern in
+  `orm::postgres::pool`)
+- `orm::cache::invalidate_table(table)` — evict every entry keyed under `table`
+- `orm::cache::clear()` — evict everything
+- `SelectBuilder::fetch_all_cached::<T>(&pool, ttl) -> Result<Arc<Vec<T>>, sqlx::Error>`
+  *(feature `postgres` + `cache`)* — same query as `.fetch_all()`, but checks the
+  cache first and stores the result on a miss. Returns `Arc<Vec<T>>` (not `Vec<T>`)
+  so a cache hit hands every caller the same allocation without requiring `T: Clone`.
+- `SelectBuilder::fetch_optional_cached::<T>(&pool, ttl) -> Result<Option<Arc<T>>, sqlx::Error>`
+  *(feature `postgres` + `cache`)* — same, for `.fetch_optional()`.
+- Automatic invalidation on write: `InsertBuilder::execute`, `UpdateBuilder::execute`,
+  `DeleteBuilder::execute` (feature `postgres` + `cache`), and the Active Record
+  write path (`orm::postgres::executor::insert`/`update`/`delete`) all call
+  `invalidate_table` for the affected table after a successful write.
+- If the `metrics` feature is also enabled, `orm::cache::get` increments
+  `rok_fluent_cache_hit_total` / `rok_fluent_cache_miss_total`.
+
+```rust,ignore
+use std::time::Duration;
+
+// First call misses the cache and queries the database; every call within
+// the TTL after that is served from the cache with zero DB round trips.
+let posts: Arc<Vec<Post>> = db::select()
+    .from(Post::table())
+    .fetch_all_cached::<Post>(&pool, Duration::from_secs(30))
+    .await?;
+
+// A write through the DSL busts the cache for "posts" automatically.
+db::insert_into(Post::table())
+    .values([("title", "New post")])
+    .execute(&pool)
+    .await?;
+
+// Manual escape hatch for writes made outside the DSL/AR paths (e.g. raw SQL):
+rok_fluent::orm::cache::invalidate_table("posts");
+```
+
+**Extra deps:** `dashmap` 6 (declared independently of `postgres`, which also pulls
+in `dashmap` for its own named-pool registry, so `cache` doesn't force-enable a
+database backend just for the dependency)
+
+**Out of scope for this phase:** sqlite/mysql cache read-through terminals — the
+DSL's async terminals (`SelectBuilder::fetch_all`, etc.) only exist for PostgreSQL
+today, so `cache`'s read-through terminals are inherently PostgreSQL-scoped too.
+
+See [`examples/14_query_cache.rs`](../examples/14_query_cache.rs).
 
 ---
 
@@ -382,6 +493,7 @@ The following are approved for implementation. See [todo.md](../todo.md) for the
 | `LockService` — advisory locks | `postgres` | 37 | Approved |
 | `SchemaInspector` | `postgres` | 37 | Approved |
 | `SelectBuilder::distinct_on` | `query` | 37 | Approved |
+| `Repository<M>` / DI override | `active` + `postgres` | 42 | **Complete** |
 | Window functions | `query` | 37 | Approved |
 | `TypedJson<T>` column wrapper | `query` | 37 | Approved |
 | `QueryLog` structured sink | `tracing` | 38 | Approved |

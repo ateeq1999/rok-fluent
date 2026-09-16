@@ -47,7 +47,12 @@ pub trait PgModel: Model + for<'r> sqlx::FromRow<'r, PgRow> + Send + Unpin + 'st
     where
         Self: Sized,
     {
-        executor::fetch_all(pool, Self::query())
+        async move {
+            if let Some(repo) = super::repository::resolve::<Self>() {
+                return repo.all(pool).await;
+            }
+            executor::fetch_all(pool, Self::query()).await
+        }
     }
 
     /// Fetch rows matching a custom query.
@@ -69,7 +74,13 @@ pub trait PgModel: Model + for<'r> sqlx::FromRow<'r, PgRow> + Send + Unpin + 'st
     where
         Self: Sized,
     {
-        executor::fetch_optional(pool, Self::find(id))
+        let id = id.into();
+        async move {
+            if let Some(repo) = super::repository::resolve::<Self>() {
+                return repo.find_by_pk(pool, id).await;
+            }
+            executor::fetch_optional(pool, Self::find(id)).await
+        }
     }
 
     /// Return the total number of rows in the model's table.
@@ -99,7 +110,12 @@ pub trait PgModel: Model + for<'r> sqlx::FromRow<'r, PgRow> + Send + Unpin + 'st
     where
         Self: Sized,
     {
-        executor::insert::<Self>(pool, Self::table_name(), data)
+        async move {
+            if let Some(repo) = super::repository::resolve::<Self>() {
+                return repo.create(pool, data).await;
+            }
+            executor::insert::<Self>(pool, Self::table_name(), data).await
+        }
     }
 
     /// Update the row with the given primary key and return rows affected.
@@ -111,8 +127,14 @@ pub trait PgModel: Model + for<'r> sqlx::FromRow<'r, PgRow> + Send + Unpin + 'st
     where
         Self: Sized,
     {
-        let builder = Self::find(id);
-        executor::update::<Self>(pool, builder, data)
+        let id = id.into();
+        async move {
+            if let Some(repo) = super::repository::resolve::<Self>() {
+                return repo.update_by_pk(pool, id, data).await;
+            }
+            let builder = Self::find(id);
+            executor::update::<Self>(pool, builder, data).await
+        }
     }
 
     /// Delete the row with the given primary key and return rows affected.
@@ -123,7 +145,13 @@ pub trait PgModel: Model + for<'r> sqlx::FromRow<'r, PgRow> + Send + Unpin + 'st
     where
         Self: Sized,
     {
-        executor::delete(pool, Self::find(id))
+        let id = id.into();
+        async move {
+            if let Some(repo) = super::repository::resolve::<Self>() {
+                return repo.delete_by_pk(pool, id).await;
+            }
+            executor::delete(pool, Self::find(id)).await
+        }
     }
 
     /// Delete rows matching a custom query and return rows affected.

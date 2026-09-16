@@ -12,3 +12,7 @@ pub mod model;
 /// Many-to-many pivot queries — gated behind `active`.
 #[cfg(feature = "active")]
 pub mod pivot_query;
+
+/// Repository / DI override registry for [`PgModel`](model::PgModel) — gated behind `active`.
+#[cfg(all(feature = "postgres", feature = "active"))]
+pub mod repository;

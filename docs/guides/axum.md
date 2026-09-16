@@ -9,6 +9,9 @@ rok-fluent = { version = "0.4", features = ["axum", "macros"] }
 `axum` implies `postgres`. For MySQL or SQLite with Axum, inject the pool manually
 via `Extension` instead of using `OrmLayer`.
 
+See [`examples/07_axum_integration.rs`](../../examples/07_axum_integration.rs) for a
+runnable version.
+
 ## OrmLayer
 
 `OrmLayer` is a Tower middleware that stores the `PgPool` in Axum's extension map.

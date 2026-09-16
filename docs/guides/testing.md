@@ -50,6 +50,9 @@ mod factories {
 Place `Factory` impls in a `factories.rs` or inline in test modules. They are
 `#[cfg(test)]`-gated and never compiled into your release binary.
 
+See [`examples/06_factories_faker.rs`](../../examples/06_factories_faker.rs) for a
+runnable version.
+
 ## In-Memory Factories (no database)
 
 ```rust,no_run

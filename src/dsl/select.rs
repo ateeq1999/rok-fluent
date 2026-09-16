@@ -912,6 +912,119 @@ impl SelectBuilder {
     }
 }
 
+// ── Cached PostgreSQL terminals ───────────────────────────────────────────────
+
+#[cfg(all(feature = "postgres", feature = "cache"))]
+impl SelectBuilder {
+    /// Cache-key prefix for this query — the table/subquery-alias/CTE name the
+    /// query selects from. Used by the `_cached` terminals below; independent
+    /// of `build_from_clause`'s quoted rendering because [`crate::orm::cache`]
+    /// keys and [`crate::orm::cache::invalidate_table`] match on the bare name.
+    fn cache_table_name(&self) -> String {
+        match &self.from {
+            None => "unknown".to_string(),
+            Some(FromSource::Table(t)) => t.clone(),
+            Some(FromSource::Subquery { alias, .. }) => alias.clone(),
+            Some(FromSource::Cte(name)) => name.clone(),
+        }
+    }
+
+    /// Same as [`fetch_all`](SelectBuilder::fetch_all), but checks the
+    /// process-wide [`orm::cache`](crate::orm::cache) first and stores the
+    /// result on a miss.
+    ///
+    /// Returns `Arc<Vec<T>>` rather than `Vec<T>` so a cache hit can hand back
+    /// the same allocation to every concurrent caller without requiring
+    /// `T: Clone` — only the caller that causes a miss actually queries the
+    /// database; every other caller within `ttl` gets a clone of the `Arc`.
+    ///
+    /// ```rust,ignore
+    /// let posts: Arc<Vec<Post>> = db::select()
+    ///     .from(Post::table())
+    ///     .fetch_all_cached::<Post>(&pool, Duration::from_secs(30))
+    ///     .await?;
+    /// ```
+    pub async fn fetch_all_cached<T>(
+        self,
+        pool: &sqlx::PgPool,
+        ttl: std::time::Duration,
+    ) -> Result<std::sync::Arc<Vec<T>>, sqlx::Error>
+    where
+        T: for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> + Send + Sync + Unpin + 'static,
+    {
+        let table = self.cache_table_name();
+        let (sql, params) = self.to_sql_pg();
+        let key = crate::orm::cache::make_key(&table, &sql, &params);
+
+        if let Some(cached) = crate::orm::cache::get::<Vec<T>>(&key) {
+            return Ok(cached);
+        }
+
+        let params_for_log = params.clone();
+        let start = std::time::Instant::now();
+        let rows = crate::core::sqlx::pg::fetch_all_as::<T>(pool, &sql, params).await?;
+        let duration = start.elapsed().as_millis() as u64;
+        crate::orm::postgres::query_log::log_query(
+            &sql,
+            &params_for_log,
+            duration,
+            rows.len() as u64,
+            &table,
+        );
+
+        let arc = std::sync::Arc::new(rows);
+        crate::orm::cache::put(key, arc.clone(), ttl);
+        Ok(arc)
+    }
+
+    /// Same as [`fetch_optional`](SelectBuilder::fetch_optional), but checks
+    /// the process-wide [`orm::cache`](crate::orm::cache) first and stores the
+    /// result on a miss.
+    ///
+    /// Returns `Option<Arc<T>>` rather than `Option<T>` for the same reason as
+    /// [`fetch_all_cached`](SelectBuilder::fetch_all_cached) — no `T: Clone`
+    /// bound. Internally the cache stores `Option<Arc<T>>` itself (rather than
+    /// wrapping the whole `Option<T>` in one outer `Arc`), since `Option<Arc<T>>`
+    /// is always `Clone` regardless of `T`, so a cache hit can be handed back
+    /// via a cheap clone of the cached entry with no `T: Clone` bound needed.
+    pub async fn fetch_optional_cached<T>(
+        self,
+        pool: &sqlx::PgPool,
+        ttl: std::time::Duration,
+    ) -> Result<Option<std::sync::Arc<T>>, sqlx::Error>
+    where
+        T: for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> + Send + Sync + Unpin + 'static,
+    {
+        let table = self.cache_table_name();
+        let had_limit = self.limit.is_some();
+        let (mut sql, params) = self.to_sql_pg();
+        if !had_limit {
+            sql.push_str(" LIMIT 1");
+        }
+        let key = crate::orm::cache::make_key(&table, &sql, &params);
+
+        if let Some(cached) = crate::orm::cache::get::<Option<std::sync::Arc<T>>>(&key) {
+            return Ok((*cached).clone());
+        }
+
+        let params_for_log = params.clone();
+        let start = std::time::Instant::now();
+        let row = crate::core::sqlx::pg::fetch_optional_as::<T>(pool, &sql, params).await?;
+        let duration = start.elapsed().as_millis() as u64;
+        crate::orm::postgres::query_log::log_query(
+            &sql,
+            &params_for_log,
+            duration,
+            u64::from(row.is_some()),
+            &table,
+        );
+
+        let wrapped: Option<std::sync::Arc<T>> = row.map(std::sync::Arc::new);
+        crate::orm::cache::put(key, std::sync::Arc::new(wrapped.clone()), ttl);
+        Ok(wrapped)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

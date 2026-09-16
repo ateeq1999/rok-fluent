@@ -24,6 +24,9 @@ let users = User::query()
     .await?;
 ```
 
+See [`examples/01_quickstart.rs`](../../examples/01_quickstart.rs) for a runnable
+Active Record connect + query walkthrough.
+
 ### Fetch terminals
 
 | Method | Returns | Notes |
@@ -120,6 +123,9 @@ let page: CursorPage<User> = User::query()
 // page.next_cursor Option<String>
 ```
 
+See [`examples/03_relations_eager_loading.rs`](../../examples/03_relations_eager_loading.rs)
+for `CrudService::paginate_with` in action.
+
 ---
 
 ## Scopes (`rok_fluent::orm::scopes`)
@@ -203,6 +209,131 @@ write before touching the database and surfaces as
 
 See [`examples/11_hooks.rs`](../../examples/11_hooks.rs).
 
+### Validation (`feature = "validate"`)
+
+`impl From<validator::ValidationErrors> for OrmError` lets a model that also
+`#[derive(validator::Validate)]` plug the [`validator`](https://docs.rs/validator)
+crate's own `#[validate(email, length(...), ...)]` field attributes straight into a
+hook with `?`:
+
+```rust,ignore
+impl Hooks for User {
+    fn before_save(&mut self) -> OrmResult<()> {
+        self.validate().map_err(OrmError::from)
+    }
+}
+```
+
+See [features.md](../features.md#validate) and
+[`examples/12_validation.rs`](../../examples/12_validation.rs).
+
+---
+
+## Repository / DI override (`rok_fluent::orm::postgres::repository`) — feature: `active` + `postgres`
+
+Swap the implementation behind `PgModel`'s default CRUD methods for a given model
+without touching any call site. `Repository<M>` has a default body for every method
+that simply calls the corresponding static `PgModel` method — an override only
+implements what it wants to change — and is dispatched dynamically via
+`Arc<dyn Repository<M>>` (`#[async_trait]`, since RPITIT methods are not
+`dyn`-compatible).
+
+```rust,no_run
+use rok_fluent::orm::postgres::repository::{register, Repository};
+use rok_fluent::orm::postgres::model::PgModel;
+use rok_fluent::core::condition::SqlValue;
+use sqlx::PgPool;
+
+struct FastUserRepo;
+
+#[async_trait::async_trait]
+impl Repository<User> for FastUserRepo {
+    async fn find_by_pk(&self, pool: &PgPool, id: SqlValue) -> Result<Option<User>, sqlx::Error> {
+        // custom caching / read-replica routing / test double, then delegate:
+        User::find_by_pk(pool, id).await
+    }
+}
+
+// Register once at startup — every existing `User::find_by_pk(...)` call site
+// transparently delegates to it afterward.
+register::<User, _>(FastUserRepo);
+```
+
+`find_by_pk`/`create`/`update_by_pk`/`delete_by_pk`/`all` on `PgModel` each check the
+per-model registry first (one `TypeId` hashmap lookup — same cost `orm::scopes`
+already pays) and fall through to the existing `executor::*` path when nothing is
+registered, so this is fully additive: existing callers who never call `register()`
+see zero behavior change.
+
+See [`examples/13_repository_di.rs`](../../examples/13_repository_di.rs).
+
+---
+
+## Query Result Cache (`rok_fluent::orm::cache`) — feature: `cache` (terminals also need `postgres` + `query`)
+
+Opt-in, per-query result cache. Nothing is cached implicitly — callers opt in per
+query via a `_cached` terminal and a TTL; every other terminal's behavior is
+unchanged. A process-wide `DashMap<String, CacheEntry>` (mirroring the `NAMED_POOLS`
+registry in `orm::postgres::pool`) holds entries keyed by table-prefixed rendered
+SQL + `SqlValue::to_sql_literal()`-joined params (`SqlValue`/`SelectBuilder` have no
+`Hash`/`Eq` impl, so the key is derived from the rendered query output). Expired
+entries are evicted lazily on the next `get` for that key — there is no background
+sweep task.
+
+```rust,ignore
+use std::time::Duration;
+use std::sync::Arc;
+
+let posts: Arc<Vec<Post>> = db::select()
+    .from(Post::table())
+    .fetch_all_cached::<Post>(&pool, Duration::from_secs(30))
+    .await?;
+
+let post: Option<Arc<Post>> = db::select()
+    .from(Post::table())
+    .where_(Post::ID.eq(1_i64))
+    .fetch_optional_cached::<Post>(&pool, Duration::from_secs(30))
+    .await?;
+```
+
+`fetch_all_cached`/`fetch_optional_cached` return `Arc<Vec<T>>`/`Option<Arc<T>>`
+rather than `Vec<T>`/`Option<T>` so a cache hit can hand every concurrent caller a
+clone of the same `Arc` without requiring `T: Clone`. The plain `fetch_all`/
+`fetch_optional`/`count`/etc. terminals are completely untouched by this feature.
+
+**Invalidation.** `InsertBuilder::execute`/`UpdateBuilder::execute`/
+`DeleteBuilder::execute` (feature `postgres` + `cache`) and the Active Record write
+path (`orm::postgres::executor::insert`/`update`/`delete`) call
+`cache::invalidate_table(table)` after every successful write, so a write through
+any path this crate controls busts the cache for the tables it touched. For writes
+made outside those paths (e.g. raw SQL), call the same functions directly:
+
+```rust,ignore
+rok_fluent::orm::cache::invalidate_table("posts");
+rok_fluent::orm::cache::clear(); // evict everything
+```
+
+Generic primitives, usable directly for arbitrary keyed values beyond the
+`SelectBuilder` terminals above:
+
+```rust,ignore
+use rok_fluent::orm::cache;
+use std::time::Duration;
+use std::sync::Arc;
+
+cache::put("my-key".to_string(), Arc::new(42_i64), Duration::from_secs(60));
+let v: Option<Arc<i64>> = cache::get::<i64>("my-key");
+```
+
+When the `metrics` feature is also enabled, `cache::get` increments
+`rok_fluent_cache_hit_total` / `rok_fluent_cache_miss_total`.
+
+**Out of scope this phase:** sqlite/mysql cache read-through — the DSL's async
+terminals (`SelectBuilder::fetch_all`, etc.) only exist for PostgreSQL today, so the
+cache terminals built on top of them are PostgreSQL-only too.
+
+See [`examples/14_query_cache.rs`](../../examples/14_query_cache.rs).
+
 ---
 
 ## Eager Loading (`rok_fluent::orm::eager`)
@@ -220,6 +351,10 @@ let users = User::query()
     .all()
     .await?;
 ```
+
+See [`examples/03_relations_eager_loading.rs`](../../examples/03_relations_eager_loading.rs)
+for a runnable version covering `with_has_many`, `group_has_many`, and
+`CrudService::all_with`/`paginate_with`.
 
 ---
 
@@ -357,6 +492,9 @@ let hits  = svc.search("alice", &["name", "email"]).await?;
 let page  = svc.search_paginated("alice", &["name", "email"], 1, 25).await?;
 ```
 
+See [`examples/03_relations_eager_loading.rs`](../../examples/03_relations_eager_loading.rs)
+for `CrudService::all_with`/`paginate_with` in action.
+
 ### `BatchService<M>`
 
 Stateless multi-row operations — pass the pool each call.
@@ -392,6 +530,9 @@ let query = fb.apply(User::query());
 let users: Vec<User> = query.all().await?;
 ```
 
+See [`examples/08_search_filter_sort.rs`](../../examples/08_search_filter_sort.rs) for
+a runnable version.
+
 ### `SortBuilder<M>`
 
 Whitelist-validated user-driven sorting — safe for accepting sort parameters from HTTP requests.
@@ -402,6 +543,9 @@ let query = sb.apply(User::query(), "created_at", "desc");
 let users = query.all().await?;
 // Silently falls back to no-op for unknown columns.
 ```
+
+See [`examples/08_search_filter_sort.rs`](../../examples/08_search_filter_sort.rs) for
+a runnable version.
 
 ### `SoftDeleteService<M>`
 
@@ -440,6 +584,9 @@ let page = SearchService::<User>::search_simple_paginated("alice", &["name", "em
 // Renders: WHERE to_tsvector('english', name || ' ' || bio) @@ plainto_tsquery('english', $1)
 let hits = SearchService::<User>::fts("alice", &["name", "bio"], &pool).await?;
 ```
+
+See [`examples/08_search_filter_sort.rs`](../../examples/08_search_filter_sort.rs) for
+a runnable version.
 
 ### `AuditService<M>`
 
@@ -487,6 +634,9 @@ tx.commit().await?;
 // or tx.rollback().await?;
 ```
 
+See [`examples/04_transactions_locking.rs`](../../examples/04_transactions_locking.rs)
+for a runnable version.
+
 ### `LockService` — feature: `active` + `postgres`
 
 PostgreSQL advisory and row-level locking.
@@ -514,6 +664,9 @@ db::select()
     .lock_conflict(LockConflict::SkipLocked)
     .fetch_one::<User>(&pool).await?;
 ```
+
+See [`examples/04_transactions_locking.rs`](../../examples/04_transactions_locking.rs)
+for a runnable version of `LockService` advisory locking.
 
 ### `SchemaInspector` — feature: `postgres`
 
@@ -578,6 +731,9 @@ let query = db::select()
     .win_col(row_number().over(Window::new().order_by(Employee::ID.asc())).alias("rn"));
 ```
 
+See [`examples/09_window_functions_cte.rs`](../../examples/09_window_functions_cte.rs)
+for a runnable version.
+
 ---
 
 ## `TypedJson<T>` column wrapper (`rok_fluent::orm::casts::TypedJson`) — feature: `postgres`
@@ -620,3 +776,6 @@ let app = Router::new()
 // In handlers:
 async fn list_users(Extension(pool): Extension<PgPool>) -> impl IntoResponse { /* … */ }
 ```
+
+See [`examples/07_axum_integration.rs`](../../examples/07_axum_integration.rs) for a
+runnable version.

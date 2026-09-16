@@ -7,6 +7,49 @@ conventions. Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+
+- **`ModelValues` trait** (`rok_fluent::ModelValues` / `rok_fluent::core::model::ModelValues`)
+  — `to_values(&self) -> Vec<(&'static str, SqlValue)>`, generated automatically by
+  `#[derive(Model)]` for every non-`#[table(skip)]` field.
+- **`PgModel::insert`/`save`/`destroy`** (feature `active` + `postgres`) — hook-aware
+  instance methods: `user.insert(&pool).await?`, `user.save(&pool).await?`,
+  `user.destroy(&pool).await?`. Require `Self: Hooks` (`insert`/`save` also require
+  `ModelValues`; `destroy` also requires `Sync` since it holds `&self` across the
+  `.await` to call `after_delete`). Existing static `PgModel::create`/`update_by_pk`/
+  `delete_by_pk` are unchanged. See [`examples/11_hooks.rs`](../examples/11_hooks.rs).
+- **`validate` feature** — integrates the [`validator`](https://docs.rs/validator) crate
+  (`0.21`, `derive` feature) with `Hooks`: `impl From<validator::ValidationErrors> for
+  OrmError` (`rok_fluent::orm::hooks`), so a model that also
+  `#[derive(validator::Validate)]` can call `self.validate().map_err(OrmError::from)?`
+  inside `before_save`/`before_create`. rok-fluent does not parse `#[validate(...)]`
+  attributes itself — that's `validator`'s own derive macro. See
+  [`examples/12_validation.rs`](../examples/12_validation.rs).
+- **Repository / DI override** (`rok_fluent::orm::postgres::repository`, feature
+  `active` + `postgres`) — `Repository<M: PgModel>` trait (`#[async_trait]`,
+  default bodies delegate to the corresponding static `PgModel` method:
+  `find_by_pk`, `create`, `update_by_pk`, `delete_by_pk`, `all`);
+  `register::<M, R>(repo: R)` to install an override at startup; `PgModel`'s own
+  `find_by_pk`/`create`/`update_by_pk`/`delete_by_pk`/`all` check the per-model
+  registry first and fall through to the existing `executor::*` path when nothing
+  is registered — fully additive, zero behavior change for callers who never call
+  `register()`. The `active` feature now also pulls in `dep:async-trait` (already
+  used by `migrate`). See [`examples/13_repository_di.rs`](../examples/13_repository_di.rs).
+- **`cache` feature** — opt-in, per-query result cache (`rok_fluent::orm::cache`):
+  `get::<T>`/`put::<T>`/`invalidate_table`/`clear`, a process-wide TTL-based
+  `DashMap` registry mirroring the `NAMED_POOLS` pattern in `orm::postgres::pool`.
+  New `SelectBuilder::fetch_all_cached`/`fetch_optional_cached` terminals (feature
+  `postgres` + `cache`) return `Arc<Vec<T>>`/`Option<Arc<T>>` so a cache hit never
+  requires `T: Clone`; existing `fetch_all`/`fetch_optional`/etc. are untouched.
+  `InsertBuilder::execute`/`UpdateBuilder::execute`/`DeleteBuilder::execute` and
+  the Active Record write path (`executor::insert`/`update`/`delete`) all call
+  `invalidate_table` for the affected table after a successful write, so nothing
+  is cached implicitly and nothing goes silently stale on the write paths this
+  crate controls. `dashmap` is now also declared independently of `postgres`, so
+  enabling `cache` alone doesn't force-enable a database backend. Out of scope
+  this phase: sqlite/mysql cache read-through — the DSL's async terminals are
+  PostgreSQL-only today. See [`examples/14_query_cache.rs`](../examples/14_query_cache.rs).
+
 ### Changed
 
 - **Breaking:** `ModelHooks` renamed to `Hooks` (`rok_fluent::orm::hooks::Hooks`). Same
@@ -20,18 +63,6 @@ conventions. Versions follow [Semantic Versioning](https://semver.org).
   observer registry removed from `rok_fluent::orm::hooks`. This was dead code — the
   registry was never consulted by any dispatch path, so no working behavior is lost.
   `OrmError`, `OrmResult`, `without_events`, and `observers_muted` are unchanged.
-
-### Added
-
-- **`ModelValues` trait** (`rok_fluent::ModelValues` / `rok_fluent::core::model::ModelValues`)
-  — `to_values(&self) -> Vec<(&'static str, SqlValue)>`, generated automatically by
-  `#[derive(Model)]` for every non-`#[table(skip)]` field.
-- **`PgModel::insert`/`save`/`destroy`** (feature `active` + `postgres`) — hook-aware
-  instance methods: `user.insert(&pool).await?`, `user.save(&pool).await?`,
-  `user.destroy(&pool).await?`. Require `Self: Hooks` (`insert`/`save` also require
-  `ModelValues`; `destroy` also requires `Sync` since it holds `&self` across the
-  `.await` to call `after_delete`). Existing static `PgModel::create`/`update_by_pk`/
-  `delete_by_pk` are unchanged. See [`examples/11_hooks.rs`](../examples/11_hooks.rs).
 
 ---
 
