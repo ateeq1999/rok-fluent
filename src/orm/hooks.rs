@@ -1,31 +1,17 @@
-//! Model hooks and observers — lifecycle callbacks on ORM operations.
-//!
-//! Two layers:
-//! 1. **`ModelHooks`** — inline trait on the model (sync)
-//! 2. **`Observer<T>`** — external struct registered via [`observe`]
+//! Model lifecycle hooks — inline callbacks on ORM write operations.
 //!
 //! # Example
 //!
 //! ```rust,no_run
-//! # use rok_fluent::orm::hooks::{Observer, OrmResult, observe};
+//! # use rok_fluent::orm::hooks::{Hooks, OrmResult};
 //! # struct User { pub id: i64, pub email: String }
-//! pub struct UserObserver;
-//!
-//! impl Observer<User> for UserObserver {
-//!     fn creating(&self, user: &mut User) -> OrmResult<()> {
-//!         user.email = user.email.to_lowercase();
+//! impl Hooks for User {
+//!     fn before_save(&mut self) -> OrmResult<()> {
+//!         self.email = self.email.to_lowercase();
 //!         Ok(())
 //!     }
 //! }
-//!
-//! observe::<User, UserObserver>(UserObserver);
 //! ```
-
-use std::{
-    any::TypeId,
-    collections::HashMap,
-    sync::{Arc, OnceLock, RwLock},
-};
 
 use crate::core::condition::SqlValue;
 
@@ -53,10 +39,13 @@ impl std::error::Error for OrmError {}
 /// Shorthand `Result` type for hook returns.
 pub type OrmResult<T = ()> = Result<T, OrmError>;
 
-// ── ModelHooks trait ──────────────────────────────────────────────────────────
+// ── Hooks trait ────────────────────────────────────────────────────────────────
 
 /// Inline lifecycle hooks on the model.  All methods are sync and no-op by default.
-pub trait ModelHooks: Sized {
+///
+/// Implement explicitly per model — e.g. `impl Hooks for User {}` — rather than
+/// relying on a blanket implementation, so overrides stay unambiguous.
+pub trait Hooks: Sized {
     /// Called before a `CREATE` operation. Return `Err` to abort.
     fn before_create(&mut self) -> OrmResult<()> {
         Ok(())
@@ -81,71 +70,6 @@ pub trait ModelHooks: Sized {
     }
     /// Called after a successful `DELETE` operation.
     fn after_delete(&self) {}
-}
-
-// ── Observer trait ────────────────────────────────────────────────────────────
-
-/// External observer — groups all lifecycle hooks in one struct.
-///
-/// All methods are sync and no-op by default; override what you need.
-pub trait Observer<T: Send + Sync + 'static>: Send + Sync + 'static {
-    /// Called before a row is created.
-    fn creating(&self, _model: &mut T) -> OrmResult<()> {
-        Ok(())
-    }
-    /// Called after a row is created.
-    fn created(&self, _model: &T) {}
-    /// Called before a row is updated.
-    fn updating(&self, _model: &mut T, _dirty: &[&str]) -> OrmResult<()> {
-        Ok(())
-    }
-    /// Called after a row is updated.
-    fn updated(&self, _model: &T) {}
-    /// Called before any write.
-    fn saving(&self, _model: &mut T) -> OrmResult<()> {
-        Ok(())
-    }
-    /// Called after any write.
-    fn saved(&self, _model: &T) {}
-    /// Called before a row is deleted.
-    fn deleting(&self, _model: &T) -> OrmResult<()> {
-        Ok(())
-    }
-    /// Called after a row is deleted.
-    fn deleted(&self, _model: &T) {}
-}
-
-// ── Observer registry ─────────────────────────────────────────────────────────
-
-#[allow(clippy::type_complexity)]
-static OBSERVER_REGISTRY: OnceLock<
-    RwLock<HashMap<TypeId, Vec<Arc<dyn std::any::Any + Send + Sync>>>>,
-> = OnceLock::new();
-
-#[allow(clippy::type_complexity)]
-fn observer_registry() -> &'static RwLock<HashMap<TypeId, Vec<Arc<dyn std::any::Any + Send + Sync>>>>
-{
-    OBSERVER_REGISTRY.get_or_init(|| RwLock::new(HashMap::new()))
-}
-
-#[allow(dead_code)]
-struct ObserverWrapper<T: Send + Sync + 'static>(Arc<dyn Observer<T>>);
-
-// SAFETY: ObserverWrapper<T> only wraps Arc<dyn Observer<T>> which is Send + Sync.
-unsafe impl<T: Send + Sync + 'static> Send for ObserverWrapper<T> {}
-unsafe impl<T: Send + Sync + 'static> Sync for ObserverWrapper<T> {}
-
-/// Register an observer for model `T`.  Call once at startup.
-pub fn observe<T: Send + Sync + 'static, Obs: Observer<T>>(obs: Obs) {
-    let type_id = TypeId::of::<T>();
-    let wrapped: Arc<dyn std::any::Any + Send + Sync> =
-        Arc::new(ObserverWrapper::<T>(Arc::new(obs)));
-    observer_registry()
-        .write()
-        .unwrap()
-        .entry(type_id)
-        .or_default()
-        .push(wrapped);
 }
 
 // ── Data-based dispatch ────────────────────────────────────────────────────────
@@ -200,12 +124,6 @@ pub fn dispatch_saving<T: 'static>(_table: &str, _data: &[(&str, SqlValue)]) -> 
 /// Dispatch the `saved` hook at the executor level.
 pub fn dispatch_saved<T: 'static>(_table: &str, _data: &[(&str, SqlValue)]) {
     if observers_muted() {}
-}
-
-/// Remove all observers for model `T`.
-pub fn clear_observers<T: Send + Sync + 'static>() {
-    let type_id = TypeId::of::<T>();
-    observer_registry().write().unwrap().remove(&type_id);
 }
 
 // ── without_events ────────────────────────────────────────────────────────────

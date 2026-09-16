@@ -39,7 +39,7 @@ pub mod services;
 // ── Core re-exports (always available) ───────────────────────────────────────
 
 pub use crate::core::condition::{Condition, JoinOp, OrderDir, SqlValue};
-pub use crate::core::model::Model;
+pub use crate::core::model::{Model, ModelValues};
 pub use crate::core::query::{Dialect, QueryBuilder};
 
 // ── Database backend re-exports ───────────────────────────────────────────────

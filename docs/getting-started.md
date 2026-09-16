@@ -107,6 +107,10 @@ db::delete_from(User::table())
     .execute(&pool).await?;
 ```
 
+See `examples/02_crud.rs` for a runnable version of insert/update/delete/upsert
+via the DSL, and `examples/09_window_functions_cte.rs` for window functions
+and CTEs.
+
 ---
 
 ## Style 2 — Active Record (`active` + `postgres` features)
@@ -147,6 +151,9 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
+See `examples/01_quickstart.rs` for a runnable connect + query walkthrough
+(SQLite, zero setup).
+
 ### Query
 
 ```rust,no_run
@@ -175,6 +182,9 @@ let user = User::find(1_i64).await?;
 // Find or 404
 let user = User::find_or_fail(1_i64).await?;
 ```
+
+See `examples/08_search_filter_sort.rs` for search/filter/sort composition,
+and `examples/03_relations_eager_loading.rs` for eager loading relations.
 
 ### Insert
 
@@ -224,6 +234,9 @@ println!("{} total, {} pages", page.total, page.last_page);
 for user in page.data { /* … */ }
 ```
 
+See `examples/03_relations_eager_loading.rs` for `CrudService::paginate_with`
+in action.
+
 ### Transactions
 
 ```rust,no_run
@@ -237,11 +250,15 @@ let result = Tx::run(|tx| async move {
 .await?;
 ```
 
+See `examples/04_transactions_locking.rs` for a runnable version with
+savepoints and advisory locking.
+
 ---
 
 ## Next Steps
 
 - [Feature flags reference](features.md)
-- [Writing migrations](guides/migrations.md)
-- [Testing with factories](guides/testing.md)
-- [Axum integration](guides/axum.md)
+- [Writing migrations](guides/migrations.md) — see also `examples/05_migrations.rs`
+- [Testing with factories](guides/testing.md) — see also `examples/06_factories_faker.rs`
+- [Axum integration](guides/axum.md) — see also `examples/07_axum_integration.rs`
+- Multi-tenancy — see `docs/guides/multi-tenancy.md` and `examples/10_multi_tenancy.rs`

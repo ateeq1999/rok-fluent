@@ -152,24 +152,56 @@ let all = User::query().without_global_scopes().all().await?;
 
 ---
 
-## Hooks (`rok_fluent::orm::hooks`)
+## Hooks (`rok_fluent::orm::hooks`) — feature: `active` + `postgres` for the instance methods
 
-Model lifecycle callbacks. Implement the `Observer` trait and register it.
+Model lifecycle callbacks. Implement the `Hooks` trait directly on your model — there is
+no separate observer/registration step.
 
 ```rust,no_run
-use rok_fluent::orm::hooks::{Observer, Event};
+use rok_fluent::orm::hooks::{Hooks, OrmResult, OrmError};
 
-struct AuditObserver;
-
-impl Observer<User> for AuditObserver {
-    fn on_creating(&self, data: &[(&str, SqlValue)]) { /* … */ }
-    fn on_created(&self, id: &SqlValue) { /* … */ }
-    fn on_updating(&self, id: &SqlValue, data: &[(&str, SqlValue)]) { /* … */ }
-    fn on_deleting(&self, id: &SqlValue) { /* … */ }
+impl Hooks for User {
+    fn before_save(&mut self) -> OrmResult<()> {
+        if self.email.is_empty() {
+            return Err(OrmError::new("email cannot be empty"));
+        }
+        self.email = self.email.to_lowercase();
+        Ok(())
+    }
+    fn after_save(&self) {
+        tracing::info!(user_id = self.id, "user saved");
+    }
 }
-
-rok_fluent::orm::hooks::observe::<User, _>(AuditObserver);
 ```
+
+All eight methods (`before_create`/`after_create`/`before_update`/`after_update`/
+`before_save`/`after_save`/`before_delete`/`after_delete`) default to a no-op, so only
+override what you need.
+
+### Hook-aware instance writes (`PgModel::insert`/`save`/`destroy`)
+
+Once a model implements both `Hooks` and `ModelValues` (the latter generated
+automatically by `#[derive(Model)]`), `PgModel` provides hook-aware instance methods
+that wrap the existing static CRUD methods:
+
+```rust,no_run
+use rok_fluent::orm::postgres::model::PgModel;
+
+let mut user = User { id: 0, email: "Alice@Example.com".into() };
+user.insert(&pool).await?;   // before_create → before_save → INSERT → after_create → after_save
+
+user.email = "alice@example.com".into();
+user.save(&pool).await?;     // before_update → before_save → UPDATE by pk → after_update → after_save
+
+user.destroy(&pool).await?;  // before_delete → DELETE by pk → after_delete
+```
+
+`before_update`'s `_dirty: &[&str]` argument is always `Self::columns()` — this crate
+does not track which fields actually changed. A hook error (`Err(OrmError)`) aborts the
+write before touching the database and surfaces as
+`sqlx::Error::Configuration(Box<OrmError>)`.
+
+See [`examples/11_hooks.rs`](../../examples/11_hooks.rs).
 
 ---
 

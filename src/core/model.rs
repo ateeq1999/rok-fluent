@@ -113,3 +113,12 @@ pub trait Model: Sized {
         Self::query().where_cosine_distance(col, embedding, op, threshold)
     }
 }
+
+/// Extracts a model instance's column values as `(column, SqlValue)` pairs.
+///
+/// Implemented automatically by `#[derive(Model)]` — one pair per column-mapped
+/// field (`#[table(skip)]` fields are excluded), in declaration order.
+pub trait ModelValues: Model {
+    /// The model's current column values, keyed by column name.
+    fn to_values(&self) -> Vec<(&'static str, super::condition::SqlValue)>;
+}

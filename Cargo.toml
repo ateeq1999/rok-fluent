@@ -63,6 +63,65 @@ name = "rok"
 path = "src/bin/rok.rs"
 required-features = ["cli"]
 
+# ── Examples ─────────────────────────────────────────────────────────────────
+# Runnable via `cargo run --example <name> --features <required-features>`.
+# See examples/*.rs module docs for the exact command and DATABASE_URL notes.
+
+[[example]]
+name = "01_quickstart"
+path = "examples/01_quickstart.rs"
+required-features = ["sqlite", "active"]
+
+[[example]]
+name = "02_crud"
+path = "examples/02_crud.rs"
+required-features = ["postgres", "query"]
+
+[[example]]
+name = "03_relations_eager_loading"
+path = "examples/03_relations_eager_loading.rs"
+required-features = ["postgres", "active"]
+
+[[example]]
+name = "04_transactions_locking"
+path = "examples/04_transactions_locking.rs"
+required-features = ["postgres", "active"]
+
+[[example]]
+name = "05_migrations"
+path = "examples/05_migrations.rs"
+required-features = ["migrate-postgres"]
+
+[[example]]
+name = "06_factories_faker"
+path = "examples/06_factories_faker.rs"
+required-features = ["factory", "sqlite", "active"]
+
+[[example]]
+name = "07_axum_integration"
+path = "examples/07_axum_integration.rs"
+required-features = ["postgres", "axum", "active"]
+
+[[example]]
+name = "08_search_filter_sort"
+path = "examples/08_search_filter_sort.rs"
+required-features = ["postgres", "active"]
+
+[[example]]
+name = "09_window_functions_cte"
+path = "examples/09_window_functions_cte.rs"
+required-features = ["postgres", "query"]
+
+[[example]]
+name = "10_multi_tenancy"
+path = "examples/10_multi_tenancy.rs"
+required-features = ["tenant"]
+
+[[example]]
+name = "11_hooks"
+path = "examples/11_hooks.rs"
+required-features = ["postgres", "active"]
+
 # ── Features ─────────────────────────────────────────────────────────────────
 
 [features]

@@ -7,7 +7,31 @@ conventions. Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
-<!-- No unreleased changes yet -->
+### Changed
+
+- **Breaking:** `ModelHooks` renamed to `Hooks` (`rok_fluent::orm::hooks::Hooks`). Same
+  shape — `before_create`/`after_create`/`before_update`/`after_update`/`before_save`/
+  `after_save`/`before_delete`/`after_delete`, all default no-op. Update any
+  `impl ModelHooks for ...` to `impl Hooks for ...`.
+
+### Removed
+
+- **Breaking:** `Observer<T>`, `observe()`, `clear_observers()`, and the internal
+  observer registry removed from `rok_fluent::orm::hooks`. This was dead code — the
+  registry was never consulted by any dispatch path, so no working behavior is lost.
+  `OrmError`, `OrmResult`, `without_events`, and `observers_muted` are unchanged.
+
+### Added
+
+- **`ModelValues` trait** (`rok_fluent::ModelValues` / `rok_fluent::core::model::ModelValues`)
+  — `to_values(&self) -> Vec<(&'static str, SqlValue)>`, generated automatically by
+  `#[derive(Model)]` for every non-`#[table(skip)]` field.
+- **`PgModel::insert`/`save`/`destroy`** (feature `active` + `postgres`) — hook-aware
+  instance methods: `user.insert(&pool).await?`, `user.save(&pool).await?`,
+  `user.destroy(&pool).await?`. Require `Self: Hooks` (`insert`/`save` also require
+  `ModelValues`; `destroy` also requires `Sync` since it holds `&self` across the
+  `.await` to call `after_delete`). Existing static `PgModel::create`/`update_by_pk`/
+  `delete_by_pk` are unchanged. See [`examples/11_hooks.rs`](../examples/11_hooks.rs).
 
 ---
 

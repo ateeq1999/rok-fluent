@@ -29,9 +29,10 @@ use sqlx::{postgres::PgRow, PgPool};
 
 use super::executor;
 use crate::core::condition::SqlValue;
-use crate::core::model::Model;
+use crate::core::model::{Model, ModelValues};
 use crate::core::query::QueryBuilder;
 use crate::core::sqlx::pg as sqlx_pg;
+use crate::orm::hooks::Hooks;
 use crate::orm::model_query::ModelQuery;
 
 /// Blanket async CRUD extension for any type that implements [`Model`] and
@@ -520,6 +521,91 @@ pub trait PgModel: Model + for<'r> sqlx::FromRow<'r, PgRow> + Send + Unpin + 'st
             .map(|(k, v)| (k.to_string(), v.clone()))
             .collect();
         async move { do_update_or_create::<Self>(&pool, find_owned, update_owned).await }
+    }
+
+    // ── hook-aware instance writes ──────────────────────────────────────────────
+
+    /// Insert this instance's current field values as a new row, running lifecycle
+    /// hooks around the write.
+    ///
+    /// Order: [`Hooks::before_create`] → [`Hooks::before_save`] (either returning
+    /// `Err` aborts before touching the database) → [`ModelValues::to_values`] →
+    /// [`PgModel::create`] → [`Hooks::after_create`] → [`Hooks::after_save`].
+    fn insert(
+        &mut self,
+        pool: &PgPool,
+    ) -> impl std::future::Future<Output = Result<u64, sqlx::Error>> + Send
+    where
+        Self: Hooks + ModelValues + Send,
+    {
+        async move {
+            self.before_create()
+                .map_err(|e| sqlx::Error::Configuration(Box::new(e)))?;
+            self.before_save()
+                .map_err(|e| sqlx::Error::Configuration(Box::new(e)))?;
+            let values = self.to_values();
+            let affected = Self::create(pool, &values).await?;
+            self.after_create();
+            self.after_save();
+            Ok(affected)
+        }
+    }
+
+    /// Update this instance's row by primary key with its current field values,
+    /// running lifecycle hooks around the write.
+    ///
+    /// Order: [`Hooks::before_update`] → [`Hooks::before_save`] (either returning
+    /// `Err` aborts before touching the database) → [`ModelValues::to_values`] →
+    /// [`PgModel::update_by_pk`] → [`Hooks::after_update`] → [`Hooks::after_save`].
+    ///
+    /// This crate has no dirty-tracking today, so `before_update` is always called
+    /// with `Self::columns()` (every column) rather than only the columns that
+    /// actually changed.
+    fn save(
+        &mut self,
+        pool: &PgPool,
+    ) -> impl std::future::Future<Output = Result<u64, sqlx::Error>> + Send
+    where
+        Self: Hooks + ModelValues + Send,
+    {
+        async move {
+            self.before_update(Self::columns())
+                .map_err(|e| sqlx::Error::Configuration(Box::new(e)))?;
+            self.before_save()
+                .map_err(|e| sqlx::Error::Configuration(Box::new(e)))?;
+            let pk = self.pk_value();
+            let values = self.to_values();
+            let affected = Self::update_by_pk(pool, pk, &values).await?;
+            self.after_update();
+            self.after_save();
+            Ok(affected)
+        }
+    }
+
+    /// Delete this instance's row by primary key, running lifecycle hooks around
+    /// the write.
+    ///
+    /// Order: [`Hooks::before_delete`] (returning `Err` aborts before touching the
+    /// database) → [`PgModel::delete_by_pk`] → [`Hooks::after_delete`].
+    ///
+    /// Requires `Self: Sync` in addition to the plan's `Hooks + Send`: `after_delete`
+    /// needs `&self` after the `.await`, so the returned future holds a `&Self`
+    /// across the await point, and `&Self` is only `Send` when `Self: Sync`.
+    fn destroy(
+        &self,
+        pool: &PgPool,
+    ) -> impl std::future::Future<Output = Result<u64, sqlx::Error>> + Send
+    where
+        Self: Hooks + Send + Sync,
+    {
+        async move {
+            self.before_delete()
+                .map_err(|e| sqlx::Error::Configuration(Box::new(e)))?;
+            let pk = self.pk_value();
+            let affected = Self::delete_by_pk(pool, pk).await?;
+            self.after_delete();
+            Ok(affected)
+        }
     }
 }
 

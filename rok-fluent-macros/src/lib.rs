@@ -158,6 +158,7 @@ fn expand_model(input: DeriveInput) -> syn::Result<TokenStream> {
     let mut index_hints: Vec<(String, String)> = Vec::new();
     let mut typed_query_fields: Vec<(String, String)> = Vec::new();
     let mut searchable_fields: Vec<String> = Vec::new();
+    let mut value_columns: Vec<(String, String)> = Vec::new();
 
     for field in fields.iter() {
         let field_ident = match &field.ident {
@@ -285,6 +286,7 @@ fn expand_model(input: DeriveInput) -> syn::Result<TokenStream> {
             if typed_queries {
                 typed_query_fields.push((field_ident.clone(), col_name.clone()));
             }
+            value_columns.push((col_name.clone(), field_ident.clone()));
             column_names.push(col_name);
         }
     }
@@ -351,6 +353,21 @@ fn expand_model(input: DeriveInput) -> syn::Result<TokenStream> {
         }
     } else {
         quote! {}
+    };
+
+    let value_field_idents: Vec<syn::Ident> = value_columns
+        .iter()
+        .map(|(_, ident)| syn::Ident::new(ident, Span::call_site()))
+        .collect();
+    let value_col_names: Vec<&String> = value_columns.iter().map(|(col, _)| col).collect();
+    let to_values_impl = quote! {
+        impl ::rok_fluent::ModelValues for #struct_name {
+            fn to_values(&self) -> ::std::vec::Vec<(&'static str, ::rok_fluent::SqlValue)> {
+                vec![
+                    #((#value_col_names, self.#value_field_idents.clone().into())),*
+                ]
+            }
+        }
     };
 
     let cast_pair_tokens: Vec<_> = cast_pairs
@@ -459,6 +476,8 @@ fn expand_model(input: DeriveInput) -> syn::Result<TokenStream> {
             #timestamps_impl
             #searchable_impl
         }
+
+        #to_values_impl
 
         impl #struct_name {
             pub fn cast_fields() -> &'static [(&'static str, &'static str)] {
