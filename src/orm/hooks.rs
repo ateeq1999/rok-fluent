@@ -39,6 +39,17 @@ impl std::error::Error for OrmError {}
 /// Shorthand `Result` type for hook returns.
 pub type OrmResult<T = ()> = Result<T, OrmError>;
 
+/// Lets `#[derive(validator::Validate)]` models call `self.validate().map_err(OrmError::from)?`
+/// directly inside a [`Hooks::before_save`]/[`Hooks::before_create`] body, so the `validator`
+/// crate's own field attributes (`#[validate(email)]`, `#[validate(length(...))]`, ...) drive
+/// validation without rok-fluent parsing them itself.
+#[cfg(feature = "validate")]
+impl From<validator::ValidationErrors> for OrmError {
+    fn from(errors: validator::ValidationErrors) -> Self {
+        Self(errors.to_string())
+    }
+}
+
 // ── Hooks trait ────────────────────────────────────────────────────────────────
 
 /// Inline lifecycle hooks on the model.  All methods are sync and no-op by default.

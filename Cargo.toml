@@ -122,6 +122,21 @@ name = "11_hooks"
 path = "examples/11_hooks.rs"
 required-features = ["postgres", "active"]
 
+[[example]]
+name = "12_validation"
+path = "examples/12_validation.rs"
+required-features = ["postgres", "active", "validate"]
+
+[[example]]
+name = "13_repository_di"
+path = "examples/13_repository_di.rs"
+required-features = ["postgres", "active"]
+
+[[example]]
+name = "14_query_cache"
+path = "examples/14_query_cache.rs"
+required-features = ["postgres", "query", "cache"]
+
 # ── Features ─────────────────────────────────────────────────────────────────
 
 [features]
@@ -135,7 +150,8 @@ macros = ["dep:rok-fluent-macros"]
 
 # Active Record / Eloquent style — PgModel, MysqlModel, SqliteModel, ModelQuery,
 # PivotQuery, MorphTo*, ThroughQuery.  Requires at least one database backend.
-active = []
+# Pulls in `dep:async-trait` for the PostgreSQL Repository<M> / DI override trait.
+active = ["dep:async-trait"]
 
 # Drizzle-style typed query DSL — db::select().from(users::table).where_(...).
 # Requires at least one database backend.
@@ -172,6 +188,17 @@ replica = []
 # Test / seeding factories
 factory          = []
 factory-postgres = ["factory", "postgres"]
+
+# Validation — integrates the `validator` crate's `#[derive(Validate)]` field
+# attributes with `Hooks::before_save`/`before_create` via `From<validator::ValidationErrors> for OrmError`.
+validate = ["dep:validator"]
+
+# Opt-in per-query result cache (rok_fluent::orm::cache) — TTL-based, table-keyed,
+# invalidated automatically on writes through the DSL builders / Active Record executor.
+# Declared independently of `postgres` (which also pulls in `dashmap` for its own
+# named-pool registry) so `cache` doesn't force-enable a database backend just for the
+# dependency; the cache *terminals* on `SelectBuilder` are still postgres-only this phase.
+cache = ["dep:dashmap"]
 
 # Migrations
 migrate          = ["dep:async-trait", "dep:anyhow"]
@@ -217,6 +244,7 @@ metrics      = { version = "0.24", optional = true }
 async-trait  = { version = "0.1", optional = true }
 anyhow       = { version = "1",   optional = true }
 clap         = { workspace = true, optional = true }
+validator    = { version = "0.21", optional = true, features = ["derive"] }
 
 [[bench]]
 name = "query_build"

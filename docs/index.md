@@ -31,6 +31,8 @@ rok-fluent = { version = "0.4", features = ["active", "query", "postgres"] }
 | Transactions & savepoints | [docs/guides/transactions.md](guides/transactions.md) |
 | Row-level & advisory locking | [docs/guides/locking.md](guides/locking.md) |
 | Performance tuning | [docs/guides/performance.md](guides/performance.md) |
+| Hooks & validation | [docs/guides/hooks-and-validation.md](guides/hooks-and-validation.md) |
+| Query caching | [docs/guides/caching.md](guides/caching.md) |
 
 ## Feature Matrix
 

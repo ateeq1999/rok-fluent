@@ -242,6 +242,10 @@ pub async fn insert<T: 'static>(
     super::query_log::log_query(&sql, &[], duration, rows, table);
     dispatch_created::<T>(table, data);
     dispatch_saved::<T>(table, data);
+    #[cfg(feature = "cache")]
+    if result.is_ok() {
+        crate::orm::cache::invalidate_table(table);
+    }
     result
 }
 
@@ -262,6 +266,10 @@ pub async fn update<T: Model + 'static>(
     super::query_log::log_query(&sql, &[], duration, rows, table);
     dispatch_updated::<T>(table, data);
     dispatch_saved::<T>(table, data);
+    #[cfg(feature = "cache")]
+    if result.is_ok() {
+        crate::orm::cache::invalidate_table(table);
+    }
     result
 }
 
@@ -279,6 +287,10 @@ pub async fn delete<T: Model + 'static>(
     let rows = result.as_ref().copied().unwrap_or(0);
     super::query_log::log_query(&sql, &[], duration, rows, table);
     dispatch_deleted::<T>(table, &[]);
+    #[cfg(feature = "cache")]
+    if result.is_ok() {
+        crate::orm::cache::invalidate_table(table);
+    }
     result
 }
 

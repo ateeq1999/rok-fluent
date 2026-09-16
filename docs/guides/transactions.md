@@ -7,6 +7,10 @@ rok-fluent provides two transaction APIs:
 
 Both are gated behind `features = ["active", "postgres"]`.
 
+See [`examples/04_transactions_locking.rs`](../../examples/04_transactions_locking.rs)
+for a runnable version covering `TransactionService` savepoints alongside advisory
+locking.
+
 ## `TransactionService`
 
 ### Begin a transaction

@@ -7,6 +7,10 @@ rok-fluent supports two types of locking:
 
 Both are PostgreSQL-specific and require `features = ["postgres"]`.
 
+See [`examples/04_transactions_locking.rs`](../../examples/04_transactions_locking.rs)
+for a runnable version of `LockService` advisory locking (row-level `FOR UPDATE`
+locking is covered by the DSL snippets below).
+
 ## `LockService` (Advisory Locks)
 
 PostgreSQL advisory locks are named locks stored in memory (not on rows). They are

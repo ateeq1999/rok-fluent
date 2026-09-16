@@ -12,6 +12,9 @@ rok-fluent = { version = "0.4", features = ["postgres", "tenant", "macros"] }
 in a task-local. Query scopes then read the task-local to automatically filter every query
 by tenant without any per-query changes to application code.
 
+See [`examples/10_multi_tenancy.rs`](../../examples/10_multi_tenancy.rs) for a runnable
+`TenantLayer` + `current_tenant_id()` walkthrough (no database required).
+
 ## TenantLayer Setup
 
 ```rust,no_run

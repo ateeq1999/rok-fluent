@@ -67,7 +67,12 @@ impl DeleteBuilder {
     /// Execute and return the number of rows deleted.
     pub async fn execute(self, pool: &sqlx::PgPool) -> Result<u64, sqlx::Error> {
         let (sql, params) = self.to_sql_pg();
-        crate::core::sqlx::pg::execute(pool, &sql, params).await
+        let result = crate::core::sqlx::pg::execute(pool, &sql, params).await;
+        #[cfg(feature = "cache")]
+        if result.is_ok() {
+            crate::orm::cache::invalidate_table(self.table);
+        }
+        result
     }
 }
 

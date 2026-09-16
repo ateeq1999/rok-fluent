@@ -9,6 +9,10 @@ pub mod pagination;
 pub mod resource;
 pub mod scopes;
 
+/// Opt-in, per-query result cache — gated behind `cache`.
+#[cfg(feature = "cache")]
+pub mod cache;
+
 // Active Record style: fluent model queries, morphic relations, pivot queries.
 // Requires both `active` and a database backend.
 #[cfg(all(feature = "active", feature = "postgres"))]

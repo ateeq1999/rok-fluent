@@ -28,6 +28,8 @@ migrations/
   003_add_active_to_users.sql
 ```
 
+See [`examples/05_migrations.rs`](../../examples/05_migrations.rs) for a runnable version.
+
 ## Running Migrations at Startup
 
 ```rust,no_run
