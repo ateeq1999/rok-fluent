@@ -366,13 +366,19 @@ No extra deps.
 ### `factory-postgres`
 
 Extends `factory` with async `.create()` and `.create_many()` methods that insert
-rows into a PostgreSQL database.
+rows into a PostgreSQL database via `PgModel::create_returning`. Also requires
+`active` (`PgModel` is gated behind it).
 
 ```toml
-rok-fluent = { version = "0.4", features = ["factory-postgres"] }
+rok-fluent = { version = "0.4", features = ["factory-postgres", "active"] }
 ```
 
 Implies `factory` + `postgres`.
+
+The same `.create()`/`.create_many()` methods also work against SQLite — enable
+`factory` + `sqlite` + `active` instead (no separate `factory-sqlite` feature
+needed; the pool type you pass in, `&PgPool` vs `&SqlitePool`, selects the
+backend). See [`examples/06_factories_faker.rs`](../examples/06_factories_faker.rs).
 
 See [guides/testing.md](guides/testing.md).
 

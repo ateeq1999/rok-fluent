@@ -956,25 +956,24 @@ impl SelectBuilder {
         let (sql, params) = self.to_sql_pg();
         let key = crate::orm::cache::make_key(&table, &sql, &params);
 
-        if let Some(cached) = crate::orm::cache::get::<Vec<T>>(&key) {
-            return Ok(cached);
-        }
-
-        let params_for_log = params.clone();
-        let start = std::time::Instant::now();
-        let rows = crate::core::sqlx::pg::fetch_all_as::<T>(pool, &sql, params).await?;
-        let duration = start.elapsed().as_millis() as u64;
-        crate::orm::postgres::query_log::log_query(
-            &sql,
-            &params_for_log,
-            duration,
-            rows.len() as u64,
-            &table,
-        );
-
-        let arc = std::sync::Arc::new(rows);
-        crate::orm::cache::put(key, arc.clone(), ttl);
-        Ok(arc)
+        // `get_or_populate` checks the cache itself and, on a miss, coalesces
+        // concurrent callers for `key` into a single execution of this
+        // loader — see `orm::cache::get_or_populate`'s doc comment.
+        crate::orm::cache::get_or_populate(&key, ttl, move || async move {
+            let params_for_log = params.clone();
+            let start = std::time::Instant::now();
+            let rows = crate::core::sqlx::pg::fetch_all_as::<T>(pool, &sql, params).await?;
+            let duration = start.elapsed().as_millis() as u64;
+            crate::orm::postgres::query_log::log_query(
+                &sql,
+                &params_for_log,
+                duration,
+                rows.len() as u64,
+                &table,
+            );
+            Ok(rows)
+        })
+        .await
     }
 
     /// Same as [`fetch_optional`](SelectBuilder::fetch_optional), but checks
@@ -1003,25 +1002,26 @@ impl SelectBuilder {
         }
         let key = crate::orm::cache::make_key(&table, &sql, &params);
 
-        if let Some(cached) = crate::orm::cache::get::<Option<std::sync::Arc<T>>>(&key) {
-            return Ok((*cached).clone());
-        }
+        // See the comment in `fetch_all_cached` — same coalescing helper,
+        // storing `Option<Arc<T>>` as the cached value (rather than `T`
+        // itself) so a hit is a cheap clone with no `T: Clone` bound needed.
+        let wrapped = crate::orm::cache::get_or_populate(&key, ttl, move || async move {
+            let params_for_log = params.clone();
+            let start = std::time::Instant::now();
+            let row = crate::core::sqlx::pg::fetch_optional_as::<T>(pool, &sql, params).await?;
+            let duration = start.elapsed().as_millis() as u64;
+            crate::orm::postgres::query_log::log_query(
+                &sql,
+                &params_for_log,
+                duration,
+                u64::from(row.is_some()),
+                &table,
+            );
+            Ok(row.map(std::sync::Arc::new))
+        })
+        .await?;
 
-        let params_for_log = params.clone();
-        let start = std::time::Instant::now();
-        let row = crate::core::sqlx::pg::fetch_optional_as::<T>(pool, &sql, params).await?;
-        let duration = start.elapsed().as_millis() as u64;
-        crate::orm::postgres::query_log::log_query(
-            &sql,
-            &params_for_log,
-            duration,
-            u64::from(row.is_some()),
-            &table,
-        );
-
-        let wrapped: Option<std::sync::Arc<T>> = row.map(std::sync::Arc::new);
-        crate::orm::cache::put(key, std::sync::Arc::new(wrapped.clone()), ttl);
-        Ok(wrapped)
+        Ok((*wrapped).clone())
     }
 }
 

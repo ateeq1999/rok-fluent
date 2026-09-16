@@ -14,8 +14,10 @@ runnable version.
 
 ## OrmLayer
 
-`OrmLayer` is a Tower middleware that stores the `PgPool` in Axum's extension map.
-Every handler can extract it without touching thread-locals.
+`OrmLayer` is a Tower middleware that scopes a `PgPool` as a task-local for the
+duration of every request. Handlers don't need to extract or pass the pool —
+pool-free `ModelQuery` terminals (`.get()`, `.first()`, `.count()`, …) find it
+automatically.
 
 ```rust,no_run
 use axum::{Extension, Router, routing::get};
@@ -41,31 +43,22 @@ async fn main() {
 ## Handlers
 
 ```rust,no_run
-use axum::{Extension, Json, extract::Path, http::StatusCode};
+use axum::{Json, extract::Path, http::StatusCode};
 use rok_fluent::orm::postgres::model::PgModel;
-use sqlx::PgPool;
 
-async fn list_users(
-    Extension(pool): Extension<PgPool>,
-) -> Result<Json<Vec<User>>, StatusCode> {
-    rok_fluent::orm::postgres::pool::set(pool);
-
-    User::query()
-        .where_eq("active", true)
+async fn list_users() -> Result<Json<Vec<User>>, StatusCode> {
+    User::all_query()
+        .and_where("active", true)
         .order_by("name")
-        .all()
+        .get()
         .await
         .map(Json)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
-async fn get_user(
-    Path(id): Path<i64>,
-    Extension(pool): Extension<PgPool>,
-) -> Result<Json<User>, StatusCode> {
-    rok_fluent::orm::postgres::pool::set(pool);
-
-    User::find_or_fail(id)
+async fn get_user(Path(id): Path<i64>) -> Result<Json<User>, StatusCode> {
+    User::find_query(id)
+        .find_or_fail()
         .await
         .map(Json)
         .map_err(|_| StatusCode::NOT_FOUND)
@@ -89,13 +82,9 @@ pub struct User {
     pub password_hash: String,
 }
 
-async fn get_user(
-    Path(id): Path<i64>,
-    Extension(pool): Extension<PgPool>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
-    rok_fluent::orm::postgres::pool::set(pool);
-
-    let user = User::find_or_fail(id)
+async fn get_user(Path(id): Path<i64>) -> Result<Json<serde_json::Value>, StatusCode> {
+    let user = User::find_query(id)
+        .find_or_fail()
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
 
@@ -112,19 +101,16 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 struct Pagination {
-    page: Option<u64>,
-    per_page: Option<u64>,
+    page: Option<u32>,
+    per_page: Option<u32>,
 }
 
 async fn list_users(
     Query(params): Query<Pagination>,
-    Extension(pool): Extension<PgPool>,
 ) -> Result<Json<Page<User>>, StatusCode> {
-    rok_fluent::orm::postgres::pool::set(pool);
-
-    let page = User::query()
-        .where_eq("active", true)
-        .paginate(params.page.unwrap_or(1), params.per_page.unwrap_or(20))
+    let page = User::all_query()
+        .and_where("active", true)
+        .paginate(params.per_page.unwrap_or(20), params.page.unwrap_or(1))
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -135,13 +121,14 @@ async fn list_users(
 ## Transactions in Handlers
 
 ```rust,no_run
-use rok_fluent::orm::postgres::transaction::Tx;
+use rok_fluent::orm::postgres::{pool, transaction::Tx};
 
 async fn create_user(
     Json(payload): Json<CreateUserPayload>,
-    Extension(pool): Extension<PgPool>,
 ) -> Result<Json<User>, StatusCode> {
-    rok_fluent::orm::postgres::pool::set(pool);
+    // `OrmLayer` scopes the pool as a task-local per request; fetch it here
+    // since `Tx::begin` needs an owned `&PgPool` to start the transaction.
+    let db = pool::try_current_pool().ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Tx::run(|tx| async move {
         let user = User::insert_returning_in_tx(&tx, &[

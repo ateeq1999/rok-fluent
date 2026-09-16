@@ -8,34 +8,37 @@ rok-fluent = { version = "0.4", features = ["mysql"] }
 
 ```rust,no_run
 use sqlx::MySqlPool;
-use rok_fluent::orm::mysql;
+use rok_fluent::orm::mysql::model::MysqlModel;
 
 let pool = MySqlPool::connect("mysql://root:password@localhost/mydb").await?;
-mysql::pool::set(pool);
 ```
 
-## `MySqlModel` CRUD Trait
+## `MysqlModel` CRUD Trait
+
+`MysqlModel` methods always take the pool explicitly — there is no task-local
+pool scoping for this backend (that's PostgreSQL-only, via `OrmLayer` /
+`orm::postgres::pool::with_pool`).
 
 ```rust,no_run
-use rok_fluent::orm::mysql::model::MySqlModel;
+use rok_fluent::orm::mysql::model::MysqlModel;
 
 // Find
-let user = User::find(1_u64).await?;
-let user = User::find_or_fail(1_u64).await?;
-let users = User::all().await?;
-let users = User::query().where_eq("active", true).all().await?;
+let user = User::find_by_pk(&pool, 1_u64).await?;    // Option<User>
+let user = User::find_or_fail(&pool, 1_u64).await?;  // User (errors if missing)
+let users = User::all(&pool).await?;
+let active = User::find_where(&pool, User::query().where_eq("active", true)).await?;
 
-// Insert
-let id = User::insert(&[("name", "Alice".into()), ("email", "a@b.com".into())]).await?;
+// Insert — returns LAST_INSERT_ID()
+let id = User::create(&pool, &[("name", "Alice".into()), ("email", "a@b.com".into())]).await?;
 
 // Update
-User::update_where(&[("active", false.into())], &[("id", 1_u64.into())]).await?;
+User::update_by_pk(&pool, 1_u64, &[("active", false.into())]).await?;
 
 // Delete
-User::delete_where(&[("id", 1_u64.into())]).await?;
+User::delete_by_pk(&pool, 1_u64).await?;
 
 // Count
-let n = User::count_where(&[("active", true.into())]).await?;
+let n = User::count(&pool).await?;
 ```
 
 ## Executor

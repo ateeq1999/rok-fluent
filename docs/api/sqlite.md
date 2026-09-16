@@ -8,38 +8,42 @@ rok-fluent = { version = "0.4", features = ["sqlite"] }
 
 ```rust,no_run
 use sqlx::SqlitePool;
-use rok_fluent::orm::sqlite;
+use rok_fluent::orm::sqlite::model::SqliteModel;
 
 // File-backed
 let pool = SqlitePool::connect("sqlite:./myapp.db").await?;
 
 // In-memory (tests)
 let pool = SqlitePool::connect("sqlite::memory:").await?;
-
-sqlite::pool::set(pool);
 ```
 
 ## `SqliteModel` CRUD Trait
+
+`SqliteModel` methods always take the pool explicitly — there is no task-local
+pool scoping for this backend (that's PostgreSQL-only, via `OrmLayer` /
+`orm::postgres::pool::with_pool`).
 
 ```rust,no_run
 use rok_fluent::orm::sqlite::model::SqliteModel;
 
 // Find
-let record = Config::find(1_i64).await?;
-let record = Config::find_or_fail(1_i64).await?;
-let all = Config::all().await?;
+let record = Config::find_by_pk(&pool, 1_i64).await?;   // Option<Config>
+let all = Config::all(&pool).await?;
 
-// Insert — returns last_insert_rowid
-let id = Config::insert(&[("key", "theme".into()), ("value", "dark".into())]).await?;
+// Insert — RETURNING * (requires SQLite 3.35+)
+let row: Config = Config::create_returning(
+    &pool,
+    &[("key", "theme".into()), ("value", "dark".into())],
+).await?;
 
 // Update
-Config::update_where(&[("value", "light".into())], &[("key", "theme".into())]).await?;
+Config::update_by_pk(&pool, 1_i64, &[("value", "light".into())]).await?;
 
 // Delete
-Config::delete_where(&[("key", "theme".into())]).await?;
+Config::delete_by_pk(&pool, 1_i64).await?;
 
 // Count
-let n = Config::count_where(&[("active", true.into())]).await?;
+let n = Config::count(&pool).await?;
 ```
 
 ## Executor
@@ -72,11 +76,13 @@ isolated database:
 async fn test_config_crud() {
     let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
     sqlx::migrate!("./migrations").run(&pool).await.unwrap();
-    sqlite::pool::set(pool.clone());
 
-    let id = Config::insert(&[("key", "lang".into()), ("value", "en".into())])
-        .await
-        .unwrap();
-    assert!(id > 0);
+    let row: Config = Config::create_returning(
+        &pool,
+        &[("key", "lang".into()), ("value", "en".into())],
+    )
+    .await
+    .unwrap();
+    assert!(row.id > 0);
 }
 ```

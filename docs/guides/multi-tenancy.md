@@ -152,8 +152,6 @@ use rok_fluent::core::tenant;
 
 #[sqlx::test]
 async fn test_tenant_isolation(pool: sqlx::PgPool) {
-    rok_fluent::orm::postgres::pool::set(pool.clone());
-
     // Simulate tenant A
     tenant::set_current_tenant_id("tenant_a");
     Post::insert(&[("tenant_id", "tenant_a".into()), ("title", "Post A".into())]).await.unwrap();

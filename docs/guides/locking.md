@@ -21,19 +21,20 @@ useful for coordinating work across connections.
 ```rust,ignore
 use rok_fluent::services::LockService;
 
-// Blocking acquire — waits until the lock is available
-LockService::acquire("deploy_lock", &pool).await?;
+// Blocking acquire — waits until the lock is available. Keys are `i64`; pick
+// any app-specific constant per lock.
+LockService::acquire(1, &pool).await?;
 
 // Do work…
-LockService::release("deploy_lock", &pool).await?;
+LockService::release(1, &pool).await?;
 ```
 
 ### Non-blocking try-acquire
 
 ```rust,ignore
-if LockService::try_acquire("cache_build_lock", &pool).await? {
+if LockService::try_acquire(2, &pool).await? {
     // Lock acquired — do work, then release
-    LockService::release("cache_build_lock", &pool).await?;
+    LockService::release(2, &pool).await?;
 } else {
     // Lock held by another session — skip
 }
@@ -45,7 +46,7 @@ if LockService::try_acquire("cache_build_lock", &pool).await? {
 use std::time::Duration;
 
 // Fail if the lock isn't acquired within 5 seconds
-LockService::acquire_timeout("rate_limiter", Duration::from_secs(5), &pool).await?;
+LockService::acquire_timeout(3, Duration::from_secs(5), &pool).await?;
 ```
 
 ### Transaction-scoped advisory locks
@@ -53,15 +54,16 @@ LockService::acquire_timeout("rate_limiter", Duration::from_secs(5), &pool).awai
 Auto-released when the transaction commits or rolls back — no explicit release needed.
 
 ```rust,ignore
-LockService::acquire_xact("order_processor", &pool).await?;
-LockService::try_acquire_xact("order_processor", &pool).await?;
+LockService::acquire_xact(4, &pool).await?;
+LockService::try_acquire_xact(4, &pool).await?;
 ```
 
 ### Advisory lock naming
 
-Lock names are converted to `i64` hash values for the underlying
-`pg_advisory_lock` / `pg_try_advisory_lock` functions. Use descriptive,
-unique string keys to avoid collisions.
+Lock keys are plain `i64` values passed straight through to the underlying
+`pg_advisory_lock` / `pg_try_advisory_lock` functions — there is no string
+hashing step. Use distinct, well-documented constants (e.g. one `const` per
+lock) to avoid collisions.
 
 ## Row-Level Locking (DSL)
 

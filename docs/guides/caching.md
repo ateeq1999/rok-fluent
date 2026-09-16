@@ -128,35 +128,30 @@ rok_fluent::orm::cache::clear();
 
 ## Known limitations
 
-**No single-flight / request-coalescing on a cold cache.** `orm::cache` is a plain
-`get` → (miss) → run query → `put` sequence, with no per-key lock held across the
-database round trip (`DashMap` operations are sync and short, and are never held across
-an `.await`). This means the cache guarantees "don't repeat a *satisfied* read within
-the TTL" — it does **not** guarantee "collapse concurrent first-time misses into a
-single query." If many callers all miss a **cold** (empty or just-invalidated) cache
-entry for the same key at once, they can all race to query the database before any one
-of them has stored a result — so a cold-cache stampede can still produce N real database
-queries for N concurrent first-time callers, not 1.
+**Single-flight coalescing is per-process only.** `fetch_all_cached`/`fetch_optional_cached`
+route through an internal `orm::cache::get_or_populate` helper that coalesces concurrent
+callers for the same cold (empty or just-invalidated) cache key: when N callers miss the
+same key at once, they join the one in-flight query instead of each starting their own —
+so a cold-cache stampede produces exactly 1 real database query for N concurrent
+first-time callers within a single process, not N. A failed attempt (the query itself
+returns `Err`) is shared the same way and does not poison the key — the next caller
+retries from scratch. See [`examples/14_query_cache.rs`](../../examples/14_query_cache.rs)
+for this demonstrated directly against a cold cache.
 
-In practice this matters most right after a cache-busting write, under high concurrency,
-for a key that's about to be re-requested by many callers at once — e.g. a popular
-`GET /posts` route right after a post is created. Once the cache is warm (any one caller
-has completed the first read and stored the result), every subsequent concurrent reader
-within the TTL is served from the cache with zero additional queries — the stampede risk
-is specifically about the *first* read after a miss, not about caching generally.
-
-If your workload is sensitive to this (very high concurrency immediately following an
-invalidation, against an expensive query), consider adding your own single-flight layer
-in front of `fetch_all_cached`/`fetch_optional_cached` (e.g. a per-key `tokio::sync::Mutex`
-or a crate like `async-once-cell`) — this is not something `orm::cache` provides today.
+This coalescing is scoped to one process: `QUERY_CACHE` and the in-flight registry behind
+it are both process-local `DashMap`s (per the module doc in `src/orm/cache.rs`), with no
+cross-process or cross-instance coordination. If you run multiple instances behind a load
+balancer, each instance's cold-cache stampede is collapsed to 1 query *per instance*, not
+1 query cluster-wide — e.g. 4 instances each independently missing the same key at once
+still produces up to 4 real queries in aggregate, one per instance. A shared cache tier
+(Redis, etc.) with its own coordination is out of scope for `orm::cache`, which remains
+intentionally a simple in-process registry.
 
 ## See also
 
 - [`examples/14_query_cache.rs`](../../examples/14_query_cache.rs) — a `GET /posts`-style
-  burst of 100 concurrent `tokio::spawn` readers against a warm cache (0 additional real
-  queries), plus a write that busts the cache and forces the next read to hit the
-  database again. The example's module doc also walks through exactly why it warms the
-  cache with one read before bursting — the same cold-cache stampede limitation
-  described above.
+  burst of 100 concurrent `tokio::spawn` readers hitting a completely *cold* cache at
+  once (1 real query, not 100 — the single-flight guarantee above), plus a write that
+  busts the cache and forces the next read to hit the database again.
 - [ORM API docs — Query Result Cache](../api/orm.md#query-result-cache-rok_fluentormcache--feature-cache-terminals-also-need-postgres--query)
 - [Features — `cache`](../features.md#cache)

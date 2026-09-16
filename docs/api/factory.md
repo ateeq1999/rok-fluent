@@ -1,8 +1,16 @@
 # API: Factories (`rok_fluent::factory`) — feature: `factory`
 
+`.make()`/`.make_many()` only need `factory` (pure in-memory generation, no
+database). `.create()`/`.create_many()` additionally need `active` plus a
+database backend — either `factory-postgres` (PostgreSQL) or `sqlite`
+(SQLite); the pool type you pass in (`&PgPool` vs `&SqlitePool`) selects which
+backend executes the insert.
+
 ```toml
 [dev-dependencies]
-rok-fluent = { version = "0.4", features = ["factory-postgres"] }
+rok-fluent = { version = "0.4", features = ["factory-postgres", "active"] }
+# …or, for SQLite:
+rok-fluent = { version = "0.4", features = ["factory", "sqlite", "active"] }
 ```
 
 ## `Factory` Trait
@@ -42,10 +50,15 @@ let admin: User = User::factory()
     .with(|u| { u.active = false; u.role = "admin".to_string(); })
     .make();
 
-// Insert to database (feature: factory-postgres)
+// Insert to database (feature: `active` + `factory-postgres` or `sqlite`)
 let user: User = User::factory().create(&pool).await?;
 let users: Vec<User> = User::factory().count(10).create_many(&pool).await?;
 ```
+
+`create`/`create_many` insert via `INSERT … RETURNING *` (`PgModel`/`SqliteModel::create_returning`
+under the hood) and return the row(s) as stored, primary key included.
+Primary-key columns are omitted from the generated `INSERT` — the database is
+expected to assign them (serial / autoincrement).
 
 ### Methods
 
@@ -55,8 +68,8 @@ let users: Vec<User> = User::factory().count(10).create_many(&pool).await?;
 | `.with(fn)` | Override fields on each built instance |
 | `.make()` | Build one instance in memory |
 | `.make_many()` | Build `count` instances in memory |
-| `.create(&pool)` | Insert one instance into DB |
-| `.create_many(&pool)` | Bulk-insert `count` instances |
+| `.create(&pool)` | Build one instance and insert it — `&PgPool` or `&SqlitePool` |
+| `.create_many(&pool)` | Build `count` instances and insert each one |
 
 ---
 

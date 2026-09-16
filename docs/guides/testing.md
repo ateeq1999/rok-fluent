@@ -79,8 +79,6 @@ use rok_fluent::factory::Factory;
 
 #[sqlx::test]
 async fn test_active_users_query(pool: sqlx::PgPool) {
-    rok_fluent::orm::postgres::pool::set(pool.clone());
-
     // Create test data
     let active = User::factory()
         .count(3)
@@ -115,8 +113,6 @@ Each test is fully independent.
 ```rust,no_run
 #[sqlx::test]
 async fn test_posts_for_user(pool: sqlx::PgPool) {
-    rok_fluent::orm::postgres::pool::set(pool.clone());
-
     let user = User::factory().create(&pool).await.unwrap();
     let _posts = Post::factory()
         .count(5)

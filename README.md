@@ -56,7 +56,7 @@ let user: User = db::insert_into(User::table())
 // Upsert — INSERT … ON CONFLICT DO UPDATE
 let user: User = db::insert_into(User::table())
     .values_typed([(User::EMAIL, "alice@example.com"), (User::NAME, "Alice")])
-    .on_conflict(User::EMAIL).do_update([(User::NAME, "Alice")])
+    .on_conflict([User::EMAIL]).do_update_values([(User::NAME, "Alice")])
     .returning()
     .fetch_one(&pool).await?;
 
@@ -120,10 +120,10 @@ let tx = TransactionService::begin(&pool).await?;
 let result = tx.create(&[("name", "Alice".into())]).await?;
 tx.commit().await?;
 
-// Advisory lock
-LockService::acquire("deploy_lock", &pool).await?;
+// Advisory lock — key is an `i64` (pick any app-specific constant per lock)
+LockService::acquire(42, &pool).await?;
 // ... critical section ...
-LockService::release("deploy_lock", &pool).await?;
+LockService::release(42, &pool).await?;
 ```
 
 ### Service Layer (`active` + `postgres`)

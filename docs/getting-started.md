@@ -85,7 +85,7 @@ let created: User = db::insert_into(User::table())
 // Upsert (INSERT … ON CONFLICT DO UPDATE)
 let user: User = db::insert_into(User::table())
     .values_typed([(User::EMAIL, "alice@example.com"), (User::NAME, "Alice")])
-    .on_conflict(User::EMAIL).do_update([(User::NAME, "Alice")])
+    .on_conflict([User::EMAIL]).do_update_values([(User::NAME, "Alice")])
     .returning()
     .fetch_one::<User>(&pool).await?;
 ```
@@ -141,12 +141,19 @@ pub struct User {
 
 ```rust,no_run
 use sqlx::PgPool;
-use rok_fluent::orm::postgres;
+use rok_fluent::orm::postgres::pool;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let pool = PgPool::connect("postgres://localhost/mydb").await?;
-    postgres::pool::set(pool);
+
+    // Pool-free ORM queries resolve their pool from this task-local scope;
+    // `OrmLayer` does this automatically per request in Axum apps.
+    pool::with_pool(pool, async {
+        // … your queries here …
+    })
+    .await;
+
     Ok(())
 }
 ```
@@ -230,7 +237,7 @@ let page: Page<User> = User::query()
     .paginate(1, 25)         // page 1, 25 per page
     .await?;
 
-println!("{} total, {} pages", page.total, page.last_page);
+println!("{} total, {} pages", page.meta.total, page.meta.last_page);
 for user in page.data { /* … */ }
 ```
 

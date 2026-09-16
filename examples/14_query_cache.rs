@@ -1,9 +1,13 @@
 //! Query result cache — `SelectBuilder::fetch_all_cached`.
 //!
 //! Simulates a read-heavy `GET /posts` endpoint: a burst of concurrent
-//! `tokio::spawn` tasks hit the same query at once. Via
-//! `orm::postgres::query_log::set_on_query` we count every *real* SQL query
-//! that actually reaches the database (a cache hit never calls
+//! `tokio::spawn` tasks hit the same query at once *against a cold cache* —
+//! nobody has read this query yet, so without single-flight coalescing this
+//! would be exactly the "thundering herd" scenario a cache is supposed to
+//! protect against (100 callers all miss at once, all 100 query the
+//! database). Via `orm::postgres::query_log::set_on_query` we count every
+//! *real* SQL query that actually reaches the database (a cache hit — or a
+//! caller that coalesces onto someone else's in-flight query — never calls
 //! `fetch_all_as`/`log_query`) and show a write immediately busts the cache
 //! so the next read hits the database again.
 //!
@@ -23,20 +27,18 @@
 //! top of them are PostgreSQL-only too — sqlite/mysql have no DSL terminals
 //! to cache in front of yet.
 //!
-//! # Why the burst runs against an already-warm cache
+//! # Why the burst can safely run against a cold cache
 //!
-//! `rok_fluent::orm::cache` is a plain `get` → (miss) → run query → `put`
-//! sequence with no per-key lock held across the query (see
-//! `src/orm/cache.rs`'s module doc: "DashMap ops are sync + short — never
-//! hold a guard across an `.await`"). That means it has no single-flight /
-//! request-coalescing behavior: if 100 callers all miss a *cold* cache at
-//! once, they can all race to query the database before any of them has
-//! stored a result — the cache guarantees "don't repeat a *satisfied* read
-//! within the TTL," not "collapse concurrent first-time misses into one
-//! query." So this example first issues one read to populate the cache (the
-//! realistic case — some request is always first), *then* bursts 100
-//! concurrent readers against the now-warm cache to demonstrate the actual
-//! guarantee: repeated reads within the TTL cost zero additional queries.
+//! `rok_fluent::orm::cache::get_or_populate` (the internal helper behind
+//! both `_cached` terminals, see `src/orm/cache.rs`) single-flights concurrent
+//! callers for the same key: when N callers all miss a *cold* cache key at
+//! once, they join the one in-flight attempt instead of each starting their
+//! own, so exactly 1 real query reaches the database no matter how many
+//! callers race in — not "the first request to arrive happens to win," but a
+//! guarantee. This example bursts 100 concurrent readers straight at an empty
+//! cache to demonstrate exactly that guarantee, rather than warming the cache
+//! with a first read before bursting (which was the workaround this example
+//! used before single-flight coalescing existed).
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -88,20 +90,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }));
 
-    // ── Warm the cache with the first, cache-populating read ───────────────
-    db::select()
-        .from(Post::table())
-        .fetch_all_cached::<Post>(&pool, Duration::from_secs(30))
-        .await?;
-    assert_eq!(
-        real_queries.load(Ordering::SeqCst),
-        1,
-        "first read must hit the DB"
-    );
-    println!("Cache warmed with 1 real query.\n");
-
-    // ── Burst: 100 concurrent "GET /posts"-style callers against the warm
-    // cache ──────────────────────────────────────────────────────────────────
+    // ── Burst: 100 concurrent "GET /posts"-style callers hit a completely
+    // cold cache at once ─────────────────────────────────────────────────────
+    // Nobody has read `posts` yet — this is the thundering-herd scenario.
+    // Single-flight coalescing inside `get_or_populate` (src/orm/cache.rs)
+    // means all 100 callers join the one in-flight query instead of each
+    // issuing their own, so exactly 1 real query reaches the database.
     let mut handles = Vec::with_capacity(100);
     for _ in 0..100 {
         let pool = pool.clone();
@@ -118,12 +112,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let fired_after_burst = real_queries.load(Ordering::SeqCst);
     println!(
-        "\n100 concurrent cache-hitting callers → {fired_after_burst} real DB quer{suffix} total",
+        "\n100 concurrent callers hitting a cold cache at once → {fired_after_burst} real DB quer{suffix} total",
         suffix = if fired_after_burst == 1 { "y" } else { "ies" }
     );
     assert_eq!(
         fired_after_burst, 1,
-        "100 concurrent reads against a warm cache must not add any real queries"
+        "100 concurrent callers racing a cold cache key must coalesce into exactly 1 real query"
     );
 
     // ── Write busts the cache ───────────────────────────────────────────────

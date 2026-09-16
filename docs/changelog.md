@@ -49,6 +49,20 @@ conventions. Versions follow [Semantic Versioning](https://semver.org).
   enabling `cache` alone doesn't force-enable a database backend. Out of scope
   this phase: sqlite/mysql cache read-through — the DSL's async terminals are
   PostgreSQL-only today. See [`examples/14_query_cache.rs`](../examples/14_query_cache.rs).
+- **Single-flight coalescing for the query result cache** (`rok_fluent::orm::cache`,
+  feature `postgres` + `cache`) — `fetch_all_cached`/`fetch_optional_cached` now route
+  through an internal `get_or_populate` helper (`src/orm/cache.rs`) that coalesces
+  concurrent callers for the same cold (empty or just-invalidated) cache key: N
+  concurrent misses for the same key now produce exactly 1 real database query, not N,
+  fixing the cold-cache "thundering herd" gap noted in the cache feature's initial
+  release. A failed attempt is shared with every waiter (each gets a `sqlx::Error`, not
+  a hang or a panic) and does not poison the key — the next caller retries from scratch.
+  Implemented with a second process-wide `DashMap` of `tokio::sync::OnceCell`s
+  (`IN_FLIGHT`), cleaned up as each attempt resolves and, via a small `Drop` guard, if
+  every waiter for a key is cancelled before it resolves — no permanent growth from
+  abandoned keys. This coalescing is per-process only, not cluster-wide; see
+  `docs/guides/caching.md`'s "Known limitations". `examples/14_query_cache.rs` now bursts
+  its 100 concurrent readers against a genuinely cold cache instead of warming it first.
 
 ### Changed
 
@@ -81,12 +95,6 @@ conventions. Versions follow [Semantic Versioning](https://semver.org).
 - **`QueryLog` structured sink** — `QueryEvent { sql, params, duration_ms, table, rows_affected }`; `tracing::trace!` span emitted when `tracing` feature is enabled.
 - **`docs.rs` metadata** — `all-features = true` + `--cfg docsrs` for auto-cfg feature badges.
 - **`SelectBuilder::distinct_on(cols)`** — PostgreSQL `SELECT DISTINCT ON (col, …)`.
-
----
-
-## [0.4.1] — 2026-05-21
-
-### Added
 - **OOP primary DSL API** (`#[derive(Table)]`) — `User::table()`, `User::ID`, `User::NAME` SCREAMING_SNAKE_CASE column constants on every `#[derive(Table)]` struct.
 - **DSL JOIN builder** — `SelectBuilder::inner_join`, `left_join`, `right_join`, `cross_join`. `Column::references()` / `eq_col()` for typed ON clauses.
 - **DSL aggregators** — `Column::count()`, `sum()`, `avg()`, `min()`, `max()`, `count_distinct()`. `SelectBuilder::group_by()`, `having()`. `AggExpr` with HAVING comparison operators.

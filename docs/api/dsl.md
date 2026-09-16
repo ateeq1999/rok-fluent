@@ -179,14 +179,21 @@ let user: User = db::insert_into(User::table())
 // ON CONFLICT (upsert) — Phase 31
 db::insert_into(User::table())
     .values_typed([(User::EMAIL, "a@b.com"), (User::NAME, "Alice")])
-    .on_conflict(User::EMAIL).do_update([(User::NAME, "Alice")])
+    .on_conflict([User::EMAIL]).do_update_values([(User::NAME, "Alice")])
+    .returning()
+    .fetch_one::<User>(&pool).await?;
+
+// … or DO UPDATE SET col = EXCLUDED.col for every given column
+db::insert_into(User::table())
+    .values_typed([(User::EMAIL, "a@b.com"), (User::NAME, "Alice")])
+    .on_conflict([User::EMAIL]).do_update_excluded([User::NAME])
     .returning()
     .fetch_one::<User>(&pool).await?;
 
 // ON CONFLICT DO NOTHING
 db::insert_into(User::table())
     .values_typed([(User::EMAIL, "a@b.com")])
-    .on_conflict(User::EMAIL).do_nothing()
+    .on_conflict_do_nothing()
     .execute(&pool).await?;
 ```
 
@@ -344,7 +351,7 @@ let page: Page<User> = db::select()
     .order_by(User::CREATED_AT.desc())
     .paginate::<User>(1, 25, &pool).await?;
 
-println!("{} total, page {}/{}", page.total, page.current_page, page.last_page);
+println!("{} total, page {}/{}", page.meta.total, page.meta.current_page, page.meta.last_page);
 
 // Cursor pagination (stable for infinite scroll)
 let page: CursorPage<User> = db::select()

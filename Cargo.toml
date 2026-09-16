@@ -185,7 +185,10 @@ tenant = ["dep:tower", "dep:http", "dep:tokio", "tokio/rt"]
 # Read-replica routing strategies
 replica = []
 
-# Test / seeding factories
+# Test / seeding factories. `.make()`/`.make_many()` only need `factory`
+# (in-memory). `.create()`/`.create_many()` additionally need `active` plus a
+# database backend — `factory-postgres` for PostgreSQL, or `factory` + `sqlite`
+# + `active` for SQLite (no separate `factory-sqlite` feature).
 factory          = []
 factory-postgres = ["factory", "postgres"]
 

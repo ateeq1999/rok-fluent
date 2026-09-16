@@ -104,13 +104,14 @@ let page: Page<User> = User::query()
     .paginate(page_num, per_page)
     .await?;
 
-// page.data        Vec<T>
-// page.total       u64 — total matching rows
-// page.per_page    u64
-// page.current_page u64
-// page.last_page   u64
-// page.from        u64 — first row index on this page
-// page.to          u64 — last row index on this page
+// page.data              Vec<T>
+// page.meta.total        i64 — total matching rows
+// page.meta.per_page     u32
+// page.meta.current_page u32
+// page.meta.last_page    u32
+// page.meta.from         u64 — first row index on this page
+// page.meta.to           u64 — last row index on this page
+// page.links.{first,last,prev,next}  navigation URLs
 
 // Simpler (no total count query)
 let page: SimplePage<User> = User::query().simple_paginate(page_num, per_page).await?;
@@ -300,6 +301,13 @@ let post: Option<Arc<Post>> = db::select()
 rather than `Vec<T>`/`Option<T>` so a cache hit can hand every concurrent caller a
 clone of the same `Arc` without requiring `T: Clone`. The plain `fetch_all`/
 `fetch_optional`/`count`/etc. terminals are completely untouched by this feature.
+
+**Single-flight coalescing.** Both terminals route through an internal
+`orm::cache::get_or_populate` helper: concurrent callers for the same cold (empty or
+just-invalidated) key join the one in-flight query instead of each starting their own,
+so N concurrent misses for the same key produce 1 real query, not N. A failed attempt
+is shared with every waiter and does not poison the key — the next caller retries.
+This coalescing is per-process only (see `docs/guides/caching.md#known-limitations`).
 
 **Invalidation.** `InsertBuilder::execute`/`UpdateBuilder::execute`/
 `DeleteBuilder::execute` (feature `postgres` + `cache`) and the Active Record write
@@ -522,12 +530,16 @@ BatchService::<User>::delete_where(&[("role", "guest".into())], &pool).await?;
 Composable, reusable WHERE clause sets. Build filters separately from execution.
 
 ```rust,ignore
-let mut fb = FilterBuilder::<User>::new();
-fb.eq("active", true);
-fb.like("email", "%@example.com");
+use rok_fluent::orm::postgres::pool;
 
-let query = fb.apply(User::query());
-let users: Vec<User> = query.all().await?;
+let filter = FilterBuilder::<User>::new()
+    .eq("active", true)
+    .like("email", "%@example.com");
+
+// `ModelQuery` terminals like `.get()` are pool-free — scope a pool with
+// `pool::with_pool` (or rely on `OrmLayer` inside an Axum handler).
+let users: Vec<User> =
+    pool::with_pool(pool.clone(), filter.apply(User::all_query()).get()).await?;
 ```
 
 See [`examples/08_search_filter_sort.rs`](../../examples/08_search_filter_sort.rs) for
@@ -538,10 +550,15 @@ a runnable version.
 Whitelist-validated user-driven sorting — safe for accepting sort parameters from HTTP requests.
 
 ```rust,ignore
-let sb = SortBuilder::<User>::new(&["name", "created_at", "email"]);
-let query = sb.apply(User::query(), "created_at", "desc");
-let users = query.all().await?;
-// Silently falls back to no-op for unknown columns.
+use rok_fluent::orm::postgres::pool;
+
+let sort = SortBuilder::<User>::new()
+    .allow("name")
+    .allow("created_at")
+    .allow("email")
+    .apply_user_input("created_at", false); // false = DESC; unknown columns are silently ignored
+
+let users: Vec<User> = pool::with_pool(pool.clone(), sort.apply(User::all_query()).get()).await?;
 ```
 
 See [`examples/08_search_filter_sort.rs`](../../examples/08_search_filter_sort.rs) for
@@ -642,19 +659,21 @@ for a runnable version.
 PostgreSQL advisory and row-level locking.
 
 ```rust,ignore
+// Advisory lock keys are `i64` — pick any app-specific constant per lock.
+
 // Advisory lock — blocking
-LockService::acquire("my_lock", &pool).await?;
-LockService::release("my_lock", &pool).await?;
+LockService::acquire(1, &pool).await?;
+LockService::release(1, &pool).await?;
 
 // Advisory lock — non-blocking
-let acquired = LockService::try_acquire("my_lock", &pool).await?;
+let acquired = LockService::try_acquire(1, &pool).await?;
 if acquired { /* locked */ }
 
 // Advisory lock — timeout
-LockService::acquire_timeout("my_lock", Duration::from_secs(5), &pool).await?;
+LockService::acquire_timeout(1, Duration::from_secs(5), &pool).await?;
 
 // Transaction-scoped advisory lock (auto-released on commit/rollback)
-LockService::acquire_xact("my_tx_lock", &pool).await?;
+LockService::acquire_xact(1, &pool).await?;
 
 // Row-level locking via SelectBuilder (feature: query)
 db::select()
@@ -762,9 +781,9 @@ in query builders.
 
 ## OrmLayer (`rok_fluent::orm::orm_layer`) — feature: `axum`
 
-## OrmLayer (`rok_fluent::orm::orm_layer`) — feature: `axum`
-
-Tower middleware that injects the pool into Axum request extensions.
+Tower middleware that scopes a `PgPool` as a task-local for the duration of
+every request, so pool-free `ModelQuery` terminals (`.get()`, `.first()`,
+`.count()`, …) find it without it being passed explicitly.
 
 ```rust,no_run
 use rok_fluent::orm::orm_layer::OrmLayer;
@@ -773,8 +792,11 @@ let app = Router::new()
     .route("/users", get(list_users))
     .layer(OrmLayer::new(pool));
 
-// In handlers:
-async fn list_users(Extension(pool): Extension<PgPool>) -> impl IntoResponse { /* … */ }
+// In handlers — no pool parameter needed:
+async fn list_users() -> impl IntoResponse {
+    let users: Vec<User> = User::all_query().and_where("active", true).get().await?;
+    Json(users)
+}
 ```
 
 See [`examples/07_axum_integration.rs`](../../examples/07_axum_integration.rs) for a
