@@ -9,18 +9,17 @@ respective database feature (`postgres`, `sqlite`, `mysql`).
 ## `ModelQuery<M>` — fluent query builder — feature: `active`
 
 `ModelQuery` is the entry point for Active Record style queries. Obtain one via
-`YourModel::query()`.
+`YourModel::filter(col, val)`, `YourModel::all_query()`, or `YourModel::find_query(id)`.
 
 ```rust,no_run
 use rok_fluent::orm::postgres::model::PgModel;
 
-let users = User::query()
-    .where_eq("active", true)
-    .where_like("email", "%@example.com")
+let users = User::filter("active", true)
+    .and_where_like("email", "%@example.com")
     .order_by_desc("created_at")
     .limit(25)
     .offset(0)
-    .all()
+    .get()
     .await?;
 ```
 
@@ -31,14 +30,14 @@ Active Record connect + query walkthrough.
 
 | Method | Returns | Notes |
 |---|---|---|
-| `.all().await?` | `Result<Vec<M>>` | all matching rows |
+| `.get().await?` | `Result<Vec<M>>` | all matching rows |
 | `.first().await?` | `Result<Option<M>>` | first matching row |
-| `.first_or_fail().await?` | `Result<M>` | `RowNotFound` if empty |
+| `.first_or_404().await?` | `Result<M>` | `RowNotFound` if empty |
 | `.first_or_default().await?` | `Result<M>` where `M: Default` | zero value if empty |
 | `.first_or_else(|| ...).await?` | `Result<M>` | closure if empty |
 | `.count().await?` | `Result<i64>` | `SELECT COUNT(*)` |
 | `.exists().await?` | `Result<bool>` | `SELECT EXISTS(…)` |
-| `.paginate(page, per).await?` | `Result<Page<M>>` | offset pagination |
+| `.paginate(per_page, current_page).await?` | `Result<Page<M>>` | offset pagination |
 | `.simple_paginate(page, per).await?` | `Result<SimplePage<M>>` | no total count |
 | `.cursor_paginate(col, cursor, per).await?` | `Result<CursorPage<M>>` | stable cursors |
 
@@ -46,16 +45,16 @@ Active Record connect + query walkthrough.
 
 | Method | SQL |
 |---|---|
-| `.where_eq("col", val)` | `WHERE col = $N` |
-| `.where_ne("col", val)` | `WHERE col != $N` |
-| `.where_gt("col", val)` | `WHERE col > $N` |
-| `.where_gte("col", val)` | `WHERE col >= $N` |
-| `.where_lt("col", val)` | `WHERE col < $N` |
-| `.where_lte("col", val)` | `WHERE col <= $N` |
-| `.where_like("col", "%pat%")` | `WHERE col LIKE $N` |
-| `.where_in("col", vals)` | `WHERE col IN (…)` |
-| `.where_null("col")` | `WHERE col IS NULL` |
-| `.where_not_null("col")` | `WHERE col IS NOT NULL` |
+| `.and_where("col", val)` | `AND col = $N` |
+| `.or_where("col", val)` | `OR col = $N` |
+| `.and_where_op("col", "!=", val)` | `AND col != $N` (op is also `>`, `>=`, `<`, `<=`) |
+| `.and_where_like("col", "%pat%")` | `AND col LIKE $N` |
+| `.and_where_ilike("col", "%pat%")` | `AND col ILIKE $N` (PostgreSQL) |
+| `.and_where_in("col", vals)` | `AND col IN (…)` |
+| `.and_where_not_in("col", vals)` | `AND col NOT IN (…)` |
+| `.and_where_null("col")` | `AND col IS NULL` |
+| `.and_where_not_null("col")` | `AND col IS NOT NULL` |
+| `.and_where_between("col", lo, hi)` | `AND col BETWEEN lo AND hi` |
 | `.and_expr(dsl_expr)` | typed DSL `Expr` bridge — requires `active` + `query` features |
 | `.or_expr(dsl_expr)` | OR variant of the above |
 
@@ -99,9 +98,8 @@ let rows = sel.fetch_all::<PostWithAuthor>(&pool).await?;
 use rok_fluent::orm::pagination::{CursorPage, Page, SimplePage};
 
 // Offset pagination
-let page: Page<User> = User::query()
-    .where_eq("active", true)
-    .paginate(page_num, per_page)
+let page: Page<User> = User::filter("active", true)
+    .paginate(per_page, page_num)
     .await?;
 
 // page.data              Vec<T>
@@ -114,11 +112,11 @@ let page: Page<User> = User::query()
 // page.links.{first,last,prev,next}  navigation URLs
 
 // Simpler (no total count query)
-let page: SimplePage<User> = User::query().simple_paginate(page_num, per_page).await?;
+let page: SimplePage<User> = User::all_query().simple_paginate(per_page, page_num).await?;
 
 // Cursor pagination (stable for infinite scroll)
-let page: CursorPage<User> = User::query()
-    .cursor_paginate("id", cursor_value, per_page)
+let page: CursorPage<User> = User::all_query()
+    .cursor_paginate(per_page, "id", cursor_value)
     .await?;
 // page.data        Vec<T>
 // page.next_cursor Option<String>
@@ -134,7 +132,8 @@ for `CrudService::paginate_with` in action.
 Reusable WHERE clause fragments. Registered globally or applied inline.
 
 ```rust,no_run
-use rok_fluent::orm::scopes::{GlobalScope, LocalScope};
+use rok_fluent::orm::scopes::GlobalScope;
+use rok_fluent::core::query::QueryBuilder;
 
 // Global scope — applied automatically to every query for a model
 struct ActiveScope;
@@ -145,16 +144,18 @@ impl GlobalScope<User> for ActiveScope {
 }
 
 // Register at startup
-rok_fluent::orm::scopes::register::<User, _>(ActiveScope);
+rok_fluent::orm::scopes::register::<User>(ActiveScope);
 
-// Local scope — applied on-demand
-let admins = User::query()
-    .scope(|q| q.where_eq("role", "admin"))
-    .all()
-    .await?;
+// Local scope — a plain impl method on the model that returns `ModelQuery<Self>`
+impl User {
+    fn admins() -> rok_fluent::orm::model_query::ModelQuery<Self> {
+        Self::filter("role", "admin")
+    }
+}
+let admins = User::admins().get().await?;
 
 // Bypass all scopes
-let all = User::query().without_global_scopes().all().await?;
+let all = User::all_query().without_global_scopes().get().await?;
 ```
 
 ---
@@ -349,14 +350,13 @@ See [`examples/14_query_cache.rs`](../../examples/14_query_cache.rs).
 Batch-load relationships to prevent N+1 queries.
 
 ```rust,no_run
-use rok_fluent::orm::eager::EagerLoad;
+use rok_fluent::orm::eager::EagerLoadable;
 
-// Load users and their posts in 2 queries instead of N+1
-let users = User::query()
-    .eager_load::<Post, _>(|user_ids| {
-        Post::query().where_in("user_id", user_ids)
-    })
-    .all()
+// Load users and their posts in 2 queries instead of N+1 —
+// `.with(relation)` returns an `EagerModelQuery<M>`; call `.get()` to execute.
+let users = User::all_query()
+    .with("posts")
+    .get()
     .await?;
 ```
 

@@ -69,7 +69,7 @@ rok-fluent = { version = "0.4", features = ["active", "postgres"] }
 ```
 
 Provides:
-- `ModelQuery<M>` — fluent query builder: `.where_eq()`, `.order_by()`, `.paginate()`, `.cursor_paginate()`, `.exists()`, `.count()`
+- `ModelQuery<M>` — fluent query builder: `.and_where()`, `.order_by()`, `.paginate()`, `.cursor_paginate()`, `.exists()`, `.count()`
 - `PgModel` / `MySqlModel` / `SqliteModel` — CRUD traits: `create`, `update`, `delete`, `find`, `bulk_create`, `upsert_returning`, soft-delete, restore
 - `MorphTo` / `MorphMany` — polymorphic relationships
 - `ThroughQuery` — has-many-through queries
@@ -87,8 +87,7 @@ Provides:
 
 ```rust
 // Active Record example
-let users: Vec<User> = User::query()
-    .where_eq("active", true)
+let users: Vec<User> = User::filter("active", true)
     .order_by_desc("created_at")
     .limit(25)
     .get()

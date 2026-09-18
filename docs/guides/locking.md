@@ -113,8 +113,7 @@ Row-level locking is not available on `ModelQuery` directly. Convert to a DSL
 ```rust,ignore
 use rok_fluent::dsl::{db, Lock};
 
-let user: User = User::query()
-    .where_eq("id", 42_i64)
+let user: User = User::filter("id", 42_i64)
     .into_dsl()
     .lock(Lock::ForUpdate)
     .fetch_one(&pool)

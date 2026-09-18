@@ -35,19 +35,20 @@ etc.).
 
 **Debug a specific query during development:**
 ```rust,no_run
-User::query()
-    .where_eq("role", "admin")
+db::select()
+    .from(User::table())
+    .where_(User::ROLE.eq("admin"))
     .inspect()
-    .get()
+    .fetch_all::<User>(&pool)
     .await?;
 ```
 
 **Keep inspect in staging, remove in prod (feature-gate):**
 ```rust,no_run
-let q = User::query().where_eq("role", "admin");
+let q = db::select().from(User::table()).where_(User::ROLE.eq("admin"));
 #[cfg(debug_assertions)]
 let q = q.inspect();
-q.get().await?;
+q.fetch_all::<User>(&pool).await?;
 ```
 
 ## `.explain()` / `.explain_json()` — ask PostgreSQL for the plan

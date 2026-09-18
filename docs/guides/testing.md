@@ -95,9 +95,8 @@ async fn test_active_users_query(pool: sqlx::PgPool) {
         .unwrap();
 
     // Run the code under test
-    let result = User::query()
-        .where_eq("active", true)
-        .all()
+    let result = User::filter("active", true)
+        .get()
         .await
         .unwrap();
 
@@ -121,10 +120,9 @@ async fn test_posts_for_user(pool: sqlx::PgPool) {
         .await
         .unwrap();
 
-    let posts = Post::query()
-        .where_eq("user_id", user.id)
-        .where_eq("published", true)
-        .all()
+    let posts = Post::filter("user_id", user.id)
+        .and_where("published", true)
+        .get()
         .await
         .unwrap();
 

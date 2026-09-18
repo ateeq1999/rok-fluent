@@ -138,10 +138,9 @@ mod tests {
             .await
             .unwrap();
 
-        let result = Post::query()
-            .where_eq("published", true)
-            .where_eq("user_id", user.id)
-            .all()
+        let result = Post::filter("published", true)
+            .and_where("user_id", user.id)
+            .get()
             .await
             .unwrap();
 

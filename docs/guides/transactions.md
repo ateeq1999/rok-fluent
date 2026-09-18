@@ -48,15 +48,16 @@ let user = tx.create_returning::<User>(&[("name", "Bob".into())]).await?;
 // Update by primary key
 let user = tx.update_by_pk::<User>(42_i64, &[("name", "Charlie".into())]).await?;
 
-// Update with a condition
+// Update with a condition — `TxCtx::update`/`::delete` take a `ModelQuery<T>`,
+// so build the filter with `User::filter(...)`, not `User::query()`.
 let n = tx.update::<User>(
-    User::query().where_eq("active", true),
+    User::filter("active", true),
     &[("status", "inactive".into())],
 ).await?;
 
 // Delete
 let n = tx.delete_by_pk::<User>(42_i64).await?;
-let n = tx.delete::<User>(User::query().where_eq("status", "guest")).await?;
+let n = tx.delete::<User>(User::filter("status", "guest")).await?;
 ```
 
 ### Raw queries
@@ -79,16 +80,23 @@ tx.rollback().await?;
 The `Tx` struct wraps `sqlx::Transaction` directly. Use it when you need
 fine-grained control or retry logic.
 
+`Tx` has no primary-key convenience methods (`find_by_pk`/`update_by_pk`/`delete_by_pk` are
+`TransactionService`-only) — build a `QueryBuilder<T>` filter via `Model::query()` or
+`Model::find(id)` instead:
+
 ```rust,ignore
 use rok_fluent::orm::postgres::transaction::Tx;
+use rok_fluent::core::model::Model;
 
 let mut tx = Tx::begin(&pool).await?;
 
-// Pool-free CRUD
-let user = tx.create::<User>(&[("name", "Dave".into())]).await?;
-let user = tx.find_by_pk::<User>(42_i64).await?;
-tx.update_by_pk::<User>(42_i64, &[("name", "Eve".into())]).await?;
-tx.delete_by_pk::<User>(42_i64).await?;
+// Pool-free CRUD — table name + data pairs, and a `QueryBuilder<T>` for the WHERE clause
+let user: User = tx
+    .insert_returning("users", &[("name", "Dave".into())])
+    .await?;
+let found: Option<User> = tx.fetch_optional(User::find(42_i64)).await?;
+tx.update(User::query().where_eq("id", 42_i64), &[("name", "Eve".into())]).await?;
+tx.delete(User::query().where_eq("id", 42_i64)).await?;
 
 tx.commit().await?;
 ```
@@ -96,9 +104,12 @@ tx.commit().await?;
 ### Retry on serialisation failure
 
 ```rust,ignore
-Tx::run_with_retry(&pool, 3, |tx| async move {
-    // Transaction body — retries up to 3 times on serialisation errors
-    let user = tx.create::<User>(&[("name", "RetryUser".into())]).await?;
+use rok_fluent::orm::postgres::executor::RetryConfig;
+
+let config = RetryConfig::default();
+Tx::run_with_retry(&pool, &config, |tx| async move {
+    // Transaction body — retries up to `config.max_attempts` times on serialisation errors
+    let user: User = tx.insert_returning("users", &[("name", "RetryUser".into())]).await?;
     Ok(user)
 }).await?;
 ```

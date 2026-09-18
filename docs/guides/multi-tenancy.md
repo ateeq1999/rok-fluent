@@ -53,11 +53,11 @@ impl GlobalScope<Post> for TenantScope {
 }
 
 // Register at startup — applies to every Post query automatically
-rok_fluent::orm::scopes::register::<Post, _>(TenantScope);
+rok_fluent::orm::scopes::register::<Post>(TenantScope);
 ```
 
-Now every `Post::query()` call includes `WHERE tenant_id = $n` without any handler
-changes.
+Now every `Post::filter(...)` / `Post::all_query()` call includes `WHERE tenant_id = $n`
+without any handler changes.
 
 ## Bypassing Tenant Scope
 
@@ -65,7 +65,7 @@ Some operations (system jobs, cross-tenant reporting) need to bypass the tenant 
 
 ```rust,no_run
 // Skip all global scopes for this query
-let all_posts = Post::query().without_global_scopes().all().await?;
+let all_posts = Post::all_query().without_global_scopes().get().await?;
 ```
 
 ## Model Definition
@@ -161,13 +161,13 @@ async fn test_tenant_isolation(pool: sqlx::PgPool) {
     Post::insert(&[("tenant_id", "tenant_b".into()), ("title", "Post B".into())]).await.unwrap();
 
     // Tenant B should only see their own post
-    let posts = Post::query().all().await.unwrap();
+    let posts = Post::all_query().get().await.unwrap();
     assert_eq!(posts.len(), 1);
     assert_eq!(posts[0].title, "Post B");
 
     // Without scope: both posts visible
     tenant::clear_current_tenant_id();
-    let all = Post::query().without_global_scopes().all().await.unwrap();
+    let all = Post::all_query().without_global_scopes().get().await.unwrap();
     assert_eq!(all.len(), 2);
 }
 ```

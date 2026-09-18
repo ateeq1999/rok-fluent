@@ -12,7 +12,7 @@ The crate ships two independent query styles that can be used together or separa
 | Style | Feature | Entry point |
 |---|---|---|
 | **Typed DSL** | `query` | `db::select().from(users::table).where_(users::id.eq(1_i64))` |
-| **Active Record** | `active` | `User::query().where_eq("id", 1_i64).first().await?` |
+| **Active Record** | `active` | `User::filter("id", 1_i64).first().await?` |
 
 ---
 

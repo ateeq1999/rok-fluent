@@ -59,11 +59,13 @@ parameters regardless of list length, which allows the database to reuse the sam
 prepared statement:
 
 ```rust,no_run
+use rok_fluent::orm::postgres::model::PgModel;
+
 // IN — N parameters, N different prepared statements for N different list lengths:
-User::query().where_in("id", vec![1_i64, 2, 3]).get().await?;
+User::find_where(&pool, User::query().where_in("id", vec![1_i64, 2, 3])).await?;
 
 // = ANY — always 1 parameter, 1 prepared statement:
-User::query().where_eq_any("id", vec![1_i64, 2, 3]).get().await?;
+User::find_where(&pool, User::query().where_eq_any("id", vec![1_i64, 2, 3])).await?;
 
 // DSL equivalent:
 db::select()

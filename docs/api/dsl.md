@@ -422,13 +422,13 @@ See [plan.md](../../plan.md) §7 for all 11 relationship types.
 
 ```rust
 // Typed Expr inside Active Record:
-let posts = Post::query()
+let posts = Post::all_query()
     .and_expr(Post::USER_ID.eq(42_i64).and(Post::PUBLISHED.eq(true)))
-    .all().await?;
+    .get().await?;
 
 // Convert ModelQuery → SelectBuilder (Phase 33):
-let posts: Vec<Post> = Post::query()
-    .where_eq("user_id", 42_i64)
+let posts: Vec<Post> = Post::all_query()
+    .and_where("user_id", 42_i64)
     .into_dsl()
     .order_by(Post::CREATED_AT.desc())
     .fetch_all(&pool).await?;

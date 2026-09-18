@@ -130,24 +130,28 @@ async fn create_user(
     // since `Tx::begin` needs an owned `&PgPool` to start the transaction.
     let db = pool::try_current_pool().ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    Tx::run(|tx| async move {
-        let user = User::insert_returning_in_tx(&tx, &[
+    let mut tx = Tx::begin(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let user: User = tx
+        .insert_returning("users", &[
             ("name",  payload.name.into()),
             ("email", payload.email.into()),
         ])
-        .await?;
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-        AuditLog::insert_in_tx(&tx, &[
-            ("action",  "user.created".into()),
-            ("user_id", user.id.into()),
-        ])
-        .await?;
-
-        Ok(user)
-    })
+    tx.insert::<AuditLog>("audit_log", &[
+        ("action",  "user.created".into()),
+        ("user_id", user.id.into()),
+    ])
     .await
-    .map(Json)
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    tx.commit().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(user))
 }
 ```
 

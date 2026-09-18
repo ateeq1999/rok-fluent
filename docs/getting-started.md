@@ -5,7 +5,7 @@ rok-fluent ships two query styles.  You can use one or both:
 | Style | Feature flag | Example |
 |---|---|---|
 | **Typed DSL** | `query` | `db::select().from(users::table).where_(users::id.eq(1_i64))` |
-| **Active Record** | `active` | `User::query().where_eq("id", 1_i64).first().await?` |
+| **Active Record** | `active` | `User::filter("id", 1_i64).first().await?` |
 
 ---
 
@@ -168,11 +168,10 @@ use rok_fluent::{Model, query};
 use rok_fluent::orm::postgres::model::PgModel;
 
 // Fluent builder
-let users = User::query()
-    .where_eq("active", true)
+let users = User::filter("active", true)
     .order_by_desc("created_at")
     .limit(20)
-    .all()
+    .get()
     .await?;
 
 // Shorthand macro
@@ -232,9 +231,8 @@ User::delete_where(&[("id", 42_i64.into())]).await?;
 ```rust,no_run
 use rok_fluent::orm::pagination::Page;
 
-let page: Page<User> = User::query()
-    .where_eq("active", true)
-    .paginate(1, 25)         // page 1, 25 per page
+let page: Page<User> = User::filter("active", true)
+    .paginate(25, 1)         // 25 per page, page 1
     .await?;
 
 println!("{} total, {} pages", page.meta.total, page.meta.last_page);
@@ -249,12 +247,13 @@ in action.
 ```rust,no_run
 use rok_fluent::orm::postgres::transaction::Tx;
 
-let result = Tx::run(|tx| async move {
-    User::insert_in_tx(&tx, &[("name", "Bob".into()), ("email", "bob@example.com".into())]).await?;
-    Account::insert_in_tx(&tx, &[("user_id", bob_id.into())]).await?;
-    Ok(())
-})
-.await?;
+let mut tx = Tx::begin(&pool).await?;
+let bob: User = tx
+    .insert_returning("users", &[("name", "Bob".into()), ("email", "bob@example.com".into())])
+    .await?;
+tx.insert::<Account>("accounts", &[("user_id", bob.id.into())])
+    .await?;
+tx.commit().await?;
 ```
 
 See `examples/04_transactions_locking.rs` for a runnable version with

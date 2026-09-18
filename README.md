@@ -95,19 +95,17 @@ pub struct User {
 }
 
 // Fluent query
-let users = User::query()
-    .where_eq("active", true)
+let users = User::filter("active", true)
     .order_by_desc("created_at")
     .limit(20)
-    .all().await?;
+    .get().await?;
 
 // Find by primary key
 let user = User::find(42_i64).await?;
 
-// Paginate
-let page: Page<User> = User::query()
-    .where_eq("active", true)
-    .paginate(1, 25).await?;
+// Paginate (per_page, current_page)
+let page: Page<User> = User::filter("active", true)
+    .paginate(25, 1).await?;
 ```
 
 ### Transactions & Locking
@@ -141,10 +139,13 @@ let updated = crud.update(42, &[("name", "Bob".into())]).await?;
 crud.delete(42).await?;
 
 // Filtering & sorting
-let results = crud.query()
-    .apply(FilterBuilder::default().eq("active", true))
-    .apply(SortBuilder::default().allow("name", "created_at").then_by("name", "asc"))
-    .paginate(1, 25).await?;
+let filtered = FilterBuilder::default().eq("active", true).apply(crud.query());
+let sorted = SortBuilder::default()
+    .allow("name")
+    .allow("created_at")
+    .then_by("name", true)
+    .apply(filtered);
+let results = sorted.paginate(25, 1).await?; // (per_page, current_page)
 
 // Batch operations
 let batch = BatchService::<User>::new(pool.clone());

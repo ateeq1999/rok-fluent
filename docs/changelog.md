@@ -71,6 +71,26 @@ conventions. Versions follow [Semantic Versioning](https://semver.org).
   `after_save`/`before_delete`/`after_delete`, all default no-op. Update any
   `impl ModelHooks for ...` to `impl Hooks for ...`.
 
+### Fixed
+
+- **Docs correctness pass** — `README.md` and every page under `docs/` mixed up two
+  API surfaces in their code examples: (1) `Model::query()` (the plain, non-awaitable
+  `core::query::QueryBuilder<T>`, meant to be handed to `M::find_where(pool, builder)`
+  or the DSL bridge) was repeatedly shown as if it were chainable and awaitable with
+  `.where_eq()...all()/.get().await?` — the real fluent Active Record entry points are
+  `PgModel::filter(col, val)`, `PgModel::all_query()`, and `PgModel::find_query(id)`,
+  which return the actually-awaitable `ModelQuery<T>` (terminals `.get()`, `.first()`,
+  `.paginate()`, etc.; chaining uses `.and_where()`, not `.where_eq()`); and (2)
+  `Tx::run(|tx| ...)` (`rok_fluent::orm::postgres::transaction::Tx`) doesn't exist —
+  replaced with manual `Tx::begin()` / `.commit()` or `Tx::run_with_retry(&pool,
+  &RetryConfig, ...)` (the retry config is a `&RetryConfig`, not a bare integer).
+  Also fixed several bugs found alongside these: `ModelQuery::paginate`/
+  `simple_paginate`/`cursor_paginate` argument order (`per_page` comes first, not
+  `current_page`), `FilterBuilder`/`SortBuilder::apply()` being called in the wrong
+  direction, `scopes::register::<T>()` being called with a stray extra type
+  parameter, and a fabricated `LocalScope` type / `.scope()` method that don't exist
+  (local scopes are plain `impl` methods returning `ModelQuery<Self>`).
+
 ### Removed
 
 - **Breaking:** `Observer<T>`, `observe()`, `clear_observers()`, and the internal

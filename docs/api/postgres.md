@@ -47,7 +47,7 @@ use rok_fluent::orm::postgres::model::PgModel;
 let user = User::find(1_i64).await?;                        // Option<User>
 let user = User::find_or_fail(1_i64).await?;                // User  (404 error if missing)
 let users = User::all().await?;                             // Vec<User>
-let users = User::query().where_eq("active", true).all().await?;
+let users = User::filter("active", true).get().await?;
 
 // Insert
 let id = User::insert(&[("name", "Alice".into()), ("email", "a@b.com".into())]).await?;
@@ -108,24 +108,40 @@ let rows = executor::bulk_insert::<User>(&pool, "users", &batch).await?;
 ```rust,no_run
 use rok_fluent::orm::postgres::transaction::Tx;
 
-// Run a closure in a transaction; rolls back on any error
-let result: MyOutput = Tx::run(|tx| async move {
-    let id = User::insert_in_tx(&tx, &[("name", "Alice".into())]).await?;
-    Account::insert_in_tx(&tx, &[("user_id", id.into())]).await?;
-    Ok(id)
+// Manual transaction — commit explicitly, or let it drop to roll back
+let mut tx = Tx::begin(&pool).await?;
+let user: User = tx
+    .insert_returning("users", &[("name", "Alice".into())])
+    .await?;
+tx.insert::<Account>("accounts", &[("user_id", user.id.into())])
+    .await?;
+tx.commit().await?;
+
+// Or with automatic retry on serialization/deadlock failures:
+use rok_fluent::orm::postgres::executor::RetryConfig;
+
+let config = RetryConfig::default();
+let user_id: i64 = Tx::run_with_retry(&pool, &config, |tx| async move {
+    let user: User = tx
+        .insert_returning("users", &[("name", "Alice".into())])
+        .await?;
+    tx.insert::<Account>("accounts", &[("user_id", user.id.into())])
+        .await?;
+    Ok(user.id)
 })
 .await?;
 
-// Nested savepoints
-Tx::run(|tx| async move {
-    Tx::savepoint(&tx, "sp1", |sp| async move {
-        // … if this block errors, only sp1 is rolled back
-        Ok(())
-    })
-    .await?;
-    Ok(())
-})
-.await?;
+// `Tx` itself has no savepoint support. For nested savepoints, use
+// `TransactionService` (`rok_fluent::services`), which wraps the same
+// underlying `sqlx::Transaction` with SAVEPOINT / ROLLBACK TO / RELEASE:
+use rok_fluent::services::TransactionService;
+
+let mut tx = TransactionService::begin(&pool).await?;
+tx.savepoint("sp1").await?;
+// … if this block errors, roll back only to sp1:
+tx.rollback_to("sp1").await?;
+tx.release("sp1").await?;
+tx.commit().await?;
 ```
 
 ---

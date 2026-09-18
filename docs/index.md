@@ -77,8 +77,8 @@ let users: Vec<User> = db::select()
 ### Active Record (`active` feature) — model-centric, expressive scopes
 
 ```rust
-let users: Vec<User> = User::query()
-    .where_like("email", "%@example.com")
+let users: Vec<User> = User::all_query()
+    .and_where_like("email", "%@example.com")
     .order_by("name")
     .limit(25)
     .get().await?;
