@@ -34,7 +34,6 @@ rok-fluent/
 │       └── publish.yml         auto-publish to crates.io on version bump
 └── src/
     ├── lib.rs                  public API surface + feature-gated re-exports
-    ├── macros.rs               query! macro_rules! macro (always available)
     ├── core/                   foundation: traits, query builder, SQL types
     │   ├── mod.rs
     │   ├── condition.rs        SqlValue, Condition, WHERE/ORDER/LIMIT builders
@@ -106,7 +105,7 @@ rok-fluent/
 ```
 rok-fluent-macros (proc-macro crate)
   └── invoked by: rok_fluent when feature = "macros"
-      generates: Model, Table, Resource, Seed derive impls + query! helper
+      generates: Model, Table, Resource, Seed derive impls
 
 src/core  (always compiled)
   ├── condition   — SqlValue, Condition, WHERE/ORDER/LIMIT/HAVING builders
@@ -153,9 +152,6 @@ import. Internal boundaries are Rust modules, not crate boundaries.
 host-platform dynamic libraries loaded by rustc. They cannot share a compilation unit with
 regular library code. Users never see this crate — `rok-fluent` re-exports its items under
 the `macros` feature.
-
-The `query!` macro is a `macro_rules!` macro (pure token substitution) and lives in
-`src/macros.rs`. No proc-macro needed.
 
 ### Two independent query styles
 The `query` (Typed DSL) and `active` (Active Record) features are fully orthogonal:

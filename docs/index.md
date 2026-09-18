@@ -39,7 +39,7 @@ rok-fluent = { version = "0.4", features = ["active", "query", "postgres"] }
 | Feature flag | What it enables | Extra deps |
 |---|---|---|
 | `default` | `macros` | — |
-| `macros` | `#[derive(Model, Table, Resource, Seed)]`, `query!` | `rok-fluent-macros` |
+| `macros` | `#[derive(Model, Table, Resource, Seed)]` | `rok-fluent-macros` |
 | **`active`** | **Active Record** — `ModelQuery`, `PgModel`, `CrudService`, `FilterBuilder`, `SortBuilder`, `BatchService`, `SoftDeleteService`*, `SearchService`*, `AuditService`*, `TransactionService`*, `LockService`* | — |
 | **`query`** | **Typed DSL** — `SelectBuilder` with JOINs/CTEs/aggregates/set-ops, `InsertBuilder`, `UpdateBuilder`, `DeleteBuilder`, `Column<T,V>`, `Expr`, `AggExpr`, `FnExpr`, `CaseExpr`, `Loaded<T>` | — |
 | `postgres` | PostgreSQL executor, pool, transactions | `sqlx/postgres`, `tokio`, `dashmap` |

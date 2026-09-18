@@ -10,8 +10,7 @@ rok-fluent = "0.4"   # enables: macros
 ```
 
 The `default` feature pulls in `rok-fluent-macros` (the proc-macro crate) so
-`#[derive(Model, Resource, Seed)]` and the `query!` macro work out of the box.
-To opt out:
+`#[derive(Model, Resource, Seed)]` work out of the box. To opt out:
 
 ```toml
 rok-fluent = { version = "0.4", default-features = false, features = ["postgres"] }
@@ -146,7 +145,7 @@ db::select()
 
 ### `macros`
 
-Enables the derive macros and `query!` shorthand. Included in `default`.
+Enables the derive macros. Included in `default`.
 
 ```toml
 rok-fluent = { version = "0.4", features = ["macros"] }
@@ -160,7 +159,6 @@ Provides:
   Use `#[table(name="...")]` to set the table name; `#[table(skip)]` to exclude fields.
 - `#[derive(Resource)]` — generates `to_resource()` for JSON API serialization
 - `#[derive(Seed)]` — generates `seed(pool, n)` bulk-insert scaffolding
-- `query!(Model, where_eq "col" val, limit 10)` — fluent query shorthand
 
 ---
 

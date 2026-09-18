@@ -164,7 +164,6 @@ See `examples/01_quickstart.rs` for a runnable connect + query walkthrough
 ### Query
 
 ```rust,no_run
-use rok_fluent::{Model, query};
 use rok_fluent::orm::postgres::model::PgModel;
 
 // Fluent builder
@@ -174,19 +173,11 @@ let users = User::filter("active", true)
     .get()
     .await?;
 
-// Shorthand macro
-let q = query!(User,
-    where_eq "active" true,
-    order_by_desc "created_at",
-    limit 20,
-);
-let users = q.all().await?;
-
 // Find by primary key
-let user = User::find(1_i64).await?;
+let user = User::find_by_pk(&pool, 1_i64).await?;
 
-// Find or 404
-let user = User::find_or_fail(1_i64).await?;
+// Find or 404 (task-local pool)
+let user = User::find_query(1_i64).first_or_404().await?;
 ```
 
 See `examples/08_search_filter_sort.rs` for search/filter/sort composition,

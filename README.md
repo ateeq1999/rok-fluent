@@ -11,7 +11,7 @@ rok-fluent = { version = "0.4", features = ["active", "query", "postgres"] }
 
 | Flag | What it enables |
 |------|----------------|
-| `macros` *(default)* | `#[derive(Model, Table, Resource, Seed)]`, `query!` macro |
+| `macros` *(default)* | `#[derive(Model, Table, Resource, Seed)]` |
 | `active` | Active Record — `ModelQuery`, `PgModel`, `CrudService`, scopes, eager loading |
 | `query` | Typed DSL — `db::select().from(table).where_(…)`, JOINs, CTEs, aggregates, window functions |
 | `postgres` / `sqlite` / `mysql` | Database backend |

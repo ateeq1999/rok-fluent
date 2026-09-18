@@ -90,6 +90,13 @@ conventions. Versions follow [Semantic Versioning](https://semver.org).
   direction, `scopes::register::<T>()` being called with a stray extra type
   parameter, and a fabricated `LocalScope` type / `.scope()` method that don't exist
   (local scopes are plain `impl` methods returning `ModelQuery<Self>`).
+- **Removed all documented references to a `query!` shorthand macro** (README.md,
+  `docs/features.md`, `docs/getting-started.md`, `docs/index.md`,
+  `docs/architecture.md`, `rok-fluent-macros/CLAUDE.md`) — this macro was never
+  implemented anywhere in `src/` (confirmed via repo-wide grep for `macro_rules!`);
+  the docs described a feature that doesn't exist. The fluent, chainable query API
+  (`PgModel::filter()`/`.all_query()`/`.find_query()` → `ModelQuery<T>`) is unaffected
+  and remains the real, working way to build queries.
 
 ### Removed
 

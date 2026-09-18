@@ -1,6 +1,6 @@
 # rok-fluent-macros — Subsystem Rules
 
-Proc-macro crate. Never published as a standalone user dependency. Called internally by `#[derive(Model, Table, Resource, Seed)]` and the `query!` macro.
+Proc-macro crate. Never published as a standalone user dependency. Called internally by `#[derive(Model, Table, Resource, Seed)]`.
 
 ## Adding a `#[table(...)]` key
 
